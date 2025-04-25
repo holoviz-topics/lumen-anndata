@@ -27,7 +27,7 @@ pip install lumen-anndata
 ## Usage
 
 ```python
-import panel_lumen_anndata
+import lumen_anndata
 ```
 
 ## Development

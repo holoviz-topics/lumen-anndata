@@ -1,1 +1,1 @@
-recursive-include panel_lumen_anndata models/*.js
+recursive-include lumen_anndata models/*.js

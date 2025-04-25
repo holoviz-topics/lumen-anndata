@@ -64,7 +64,7 @@ markdown_extensions:
                   # Add any other requirements here
                   # see https://mkdocs.py.cafe/en/latest/ for more info
                   panel
-                  panel_lumen_anndata
+                  lumen_anndata
                 link_text: |
                   <img src="https://py.cafe/logos/pycafe_logo.png" style="height: 24px"> **Run and edit this code in Py.Cafe**
     - pymdownx.snippets:
@@ -85,12 +85,12 @@ plugins:
 
 watch:
     - docs
-    - src/panel_lumen_anndata
+    - src/lumen_anndata
 
 nav:
     - Home: index.md
     - Examples: examples.md
-    - Reference: reference/panel_lumen_anndata.md
+    - Reference: reference/lumen_anndata.md
 
 extra:
   social:

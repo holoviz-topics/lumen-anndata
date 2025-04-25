@@ -23,7 +23,7 @@ pytest-cov = "*"
 mypy = "*"
 [feature.test.tasks]
 test = "pytest"
-test-coverage = "pytest --cov=panel_lumen_anndata --cov-report=xml --cov-report=term-missing"
+test-coverage = "pytest --cov=lumen_anndata --cov-report=xml --cov-report=term-missing"
 
 [feature.build.dependencies]
 python-build = "*"

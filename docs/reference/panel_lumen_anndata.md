@@ -1,3 +1,3 @@
 # Reference
 
-::: panel_lumen_anndata
+::: lumen_anndata

@@ -1,4 +1,4 @@
-"""Accessible imports for the panel_lumen_anndata package."""
+"""Accessible imports for the lumen_anndata package."""
 
 import importlib.metadata
 import warnings
