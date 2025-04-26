@@ -13,7 +13,7 @@ We are actively developing core functionality and the API may change significant
 
 ## Overview
 
-lumen-anndata is an extension that enables [Lumen](https://lumen.holoviz.org/) to interact with [anndata](https://anndata.readthedocs.io/) objects, a common format for single-cell genomics data. It allows researchers to use natural language to explore, analyze, and visualize complex single-cell datasets through a chat interface.
+lumen-anndata is an extension to enable [Lumen](https://lumen.holoviz.org/) to interact with [anndata](https://anndata.readthedocs.io/) objects, a common format for single-cell genomics data. It aims to allow researchers to use natural language to explore, analyze, and visualize complex single-cell datasets through a chat interface.
 
 ## Features (Planned)
 lumen-anndata aims to support the following capabilities:
