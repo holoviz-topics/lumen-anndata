@@ -6,15 +6,21 @@
 [![python-version](https://img.shields.io/pypi/pyversions/lumen-anndata?logoColor=white&logo=python&style=flat-square)](https://pypi.org/project/lumen-anndata)
 
 
-Lumen for anndata and scanpy
+## ⚠️ Early Development Warning
 
-## Features
+This project is in pre-alpha development stage and NOT READY for use.
+We are actively developing core functionality and the API may change significantly with each update.
 
-lumen-anndata
+## Overview
 
-## Pin your version!
+lumen-anndata is an extension that enables [Lumen](https://lumen.holoviz.org/) to interact with [anndata](https://anndata.readthedocs.io/) objects, a common format for single-cell genomics data. It allows researchers to use natural language to explore, analyze, and visualize complex single-cell datasets through a chat interface.
 
-This project is **in its early stages**, so if you find a version that suits your needs, it’s recommended to **pin your version**, as updates may introduce changes.
+## Features (Planned)
+lumen-anndata aims to support the following capabilities:
+
+- Natural language querying of anndata objects
+- Integration with select scanpy functions for running analysis and static plotting
+- Interactive visualization of single-cell data (UMAP, DotMap, HeatMap, Dendrogram, etc.) with HoloViz
 
 ## Installation
 
@@ -55,7 +61,7 @@ pixi run postinstall
 pixi run test
 ```
 
-This repository is based on [copier-template-panel-extension](https://github.com/panel-extensions/copier-template-panel-extension) (you can create your own Panel extension with it)!
+This repository is adapted from [copier-template-panel-extension](https://github.com/panel-extensions/copier-template-panel-extension)
 
 To update to the latest template version run:
 
