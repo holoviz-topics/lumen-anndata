@@ -3,6 +3,7 @@ import panel as pn
 
 pn.config.disconnect_notification = "Connection lost, try reloading the page!"
 pn.config.ready_notification = "Application fully loaded."
+pn.extension("filedropper")
 
 INSTRUCTIONS = """
 You are an expert scientist working in Python, with a specialty using Anndata and Scanpy.
