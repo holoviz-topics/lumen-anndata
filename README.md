@@ -32,8 +32,10 @@ pip install lumen-anndata
 
 ## Usage
 
-```python
-import lumen_anndata
+To launch the Lumen app, run:
+
+```bash
+lumen-anndata
 ```
 
 ## Development
@@ -48,8 +50,8 @@ For a simple setup use [`uv`](https://docs.astral.sh/uv/):
 ```bash
 uv venv
 source .venv/bin/activate # on linux. Similar commands for windows and osx
-pip install "git+https://github.com/holoviz/lumen@main#egg=lumen[ai]"
 uv pip install -e .[dev]
+uv pip install "git+https://github.com/holoviz/lumen@main#egg=lumen[ai]"
 pre-commit run install
 pytest tests
 ```
