@@ -2,9 +2,7 @@
 
 import pytest
 from panel.config import panel_extension
-from panel.io.reload import _local_modules
-from panel.io.reload import _modules
-from panel.io.reload import _watched_files
+from panel.io.reload import _local_modules, _modules, _watched_files
 from panel.io.state import state
 from panel.theme import Design
 

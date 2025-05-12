@@ -32,8 +32,10 @@ pip install lumen-anndata
 
 ## Usage
 
-```python
-import lumen_anndata
+To launch the Lumen app, run:
+
+```bash
+lumen-anndata
 ```
 
 ## Development
@@ -49,7 +51,8 @@ For a simple setup use [`uv`](https://docs.astral.sh/uv/):
 uv venv
 source .venv/bin/activate # on linux. Similar commands for windows and osx
 uv pip install -e .[dev]
-pre-commit run install
+uv pip install "git+https://github.com/holoviz/lumen@main#egg=lumen[ai-llama]"
+pre-commit run
 pytest tests
 ```
 
@@ -70,6 +73,18 @@ pixi exec --spec copier --spec ruamel.yaml -- copier update --defaults --trust
 ```
 
 Note: `copier` will show `Conflict` for files with manual changes during an update. This is normal. As long as there are no merge conflict markers, all patches applied cleanly.
+
+To update the embeddings to use a new version of `scanpy`, increment the version in `scripts/embed_docs.py` and run:
+
+```bash
+python scripts/embed_docs.py
+```
+
+Ensure you have an OpenAI API key set in your environment variables. You can set it in your terminal session with:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
 
 ## ❤️ Contributing
 
