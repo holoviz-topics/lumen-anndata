@@ -1,3 +1,8 @@
+"""
+Lumen AI - Scanpy Explorer.
+
+This is a simple web application that allows users to explore Scanpy datasets using Lumen AI.
+"""
 from pathlib import Path
 
 import lumen.ai as lmai
