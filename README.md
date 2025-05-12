@@ -48,6 +48,7 @@ For a simple setup use [`uv`](https://docs.astral.sh/uv/):
 ```bash
 uv venv
 source .venv/bin/activate # on linux. Similar commands for windows and osx
+pip install "git+https://github.com/holoviz/lumen@main#egg=lumen[ai]"
 uv pip install -e .[dev]
 pre-commit run install
 pytest tests
@@ -70,6 +71,18 @@ pixi exec --spec copier --spec ruamel.yaml -- copier update --defaults --trust
 ```
 
 Note: `copier` will show `Conflict` for files with manual changes during an update. This is normal. As long as there are no merge conflict markers, all patches applied cleanly.
+
+To update the embeddings to use a new version of `scanpy`, increment the version in `scripts/embed_docs.py` and run:
+
+```bash
+python scripts/embed_docs.py
+```
+
+Ensure you have an OpenAI API key set in your environment variables. You can set it in your terminal session with:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
 
 ## ❤️ Contributing
 

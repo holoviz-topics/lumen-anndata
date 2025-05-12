@@ -17,6 +17,8 @@ vector_store = lmai.vector_store.DuckDBVectorStore(uri=db_uri, embeddings=lmai.e
 doc_lookup = lmai.tools.VectorLookupTool(vector_store=vector_store, n=3)
 
 ui = lmai.ExplorerUI(
-    agents=[lmai.agents.ChatAgent(tools=[doc_lookup], template_overrides={"main": {"instructions": INSTRUCTIONS}})], default_agents=[], log_level="debug"
+    agents=[lmai.agents.ChatAgent(tools=[doc_lookup], template_overrides={"main": {"instructions": INSTRUCTIONS}})],
+    llm=lmai.llm.LlamaCpp(),
+    default_agents=[], log_level="debug"
 )
 ui.servable()
