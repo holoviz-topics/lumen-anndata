@@ -51,7 +51,7 @@ For a simple setup use [`uv`](https://docs.astral.sh/uv/):
 uv venv
 source .venv/bin/activate # on linux. Similar commands for windows and osx
 uv pip install -e .[dev]
-uv pip install "git+https://github.com/holoviz/lumen@main#egg=lumen[ai]"
+uv pip install "git+https://github.com/holoviz/lumen@main#egg=lumen[ai-llama]"
 pre-commit run install
 pytest tests
 ```
