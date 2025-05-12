@@ -52,7 +52,7 @@ uv venv
 source .venv/bin/activate # on linux. Similar commands for windows and osx
 uv pip install -e .[dev]
 uv pip install "git+https://github.com/holoviz/lumen@main#egg=lumen[ai-llama]"
-pre-commit run install
+pre-commit run
 pytest tests
 ```
 
