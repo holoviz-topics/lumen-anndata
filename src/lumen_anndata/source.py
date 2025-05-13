@@ -8,8 +8,15 @@ from lumen.transforms import SQLFilter, SQLColumns, SQLLimit
 
 class AnnDataSource(DuckDBSource):
     """
-    AnnDataSource provides a Lumen Source around an AnnData-backed DuckDB
-    instance, leveraging the existing AnnSQL wrapper under the hood.
+    AnnDataSource provides a Lumen DuckDB wrapper for AnnData datasets.
+
+    It works by mirroring the `obs` and `var` tables into DuckDB and
+    tracking selections along the obs and var dimensions.
+
+    The `.get` method extends the default behavior of a DuckDB source
+    by making it possible to return the AnnData object instead of the
+    requested table. By setting `return_type="anndata"` you can request
+    the AnnData object with the current selections applied.
     """
 
     adata = param.ClassSelector(class_=(AnnData, str, pathlib.Path), doc="""
