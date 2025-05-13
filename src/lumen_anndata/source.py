@@ -1,6 +1,11 @@
-import param
-import pathlib
+from __future__ import annotations
 
+import os
+import pathlib
+from typing import Any
+
+import anndata as ad
+import param
 from anndata import AnnData
 from lumen.sources.duckdb import DuckDBSource, cached
 from lumen.transforms import SQLFilter, SQLColumns, SQLLimit
@@ -36,7 +41,7 @@ class AnnDataSource(DuckDBSource):
         if '_adata' in params:
             self._adata = params.pop('_adata')
         else:
-            if isinstance(adata, (pathlib.Path, str)) and os.path.exists(adata):
+            if isinstance(adata, (pathlib.Path, str)):
                 self._adata = ad.read_h5ad(adata)
             elif isinstance(adata, AnnData):
                 self._adata = adata
