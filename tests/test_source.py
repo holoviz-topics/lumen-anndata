@@ -18,6 +18,7 @@ def fixed_sample_anndata():
         {
             "cell_type": pd.Categorical(["B", "T", "B", "NK"]),
             "n_genes": [10, 20, 5, 15],
+            "sample_name": ["1261A", "1262C", "1263B", "1264D"]
         },
         index=["cell_0", "cell_1", "cell_2", "cell_3"],
     )
@@ -405,7 +406,7 @@ def test_get_dataframe_random(sample_anndata):
     assert len(source._obs_ids_selected) == len(filtered)
 
 
-def test_get_anndata(sample_anndata):
+def test_get_anndata_sample(sample_anndata):
     """Test the get method returning AnnData."""
     source = AnnDataSource(adata=sample_anndata)
 
@@ -577,3 +578,58 @@ def test_get_with_sql_transforms(sample_anndata):
     combined = source.get("obs", sample_id="sample1", sql_transforms=[sql_filter])
     assert all(combined["cell_type"] == "B")
     assert all(combined["sample_id"] == "sample1")
+
+
+def test_create_sql_expr_source(fixed_sample_anndata):
+    """Test creating a new source with SQL expressions."""
+    source = AnnDataSource(adata=fixed_sample_anndata)
+
+    # Create a new source with a SQL expression for specific sample
+    new_source = source.create_sql_expr_source({"new_table": "SELECT * FROM obs WHERE sample_name = '1262C'"})
+
+    # Verify the new table exists in the new source
+    assert "new_table" in new_source.get_tables()
+
+    # Get data from the new table
+    new_table_data = new_source.get("new_table")
+
+    # Verify the contents match the expected filtered data
+    assert len(new_table_data) == 1
+    assert new_table_data.iloc[0]["sample_name"] == "1262C"
+    assert new_table_data.iloc[0]["cell_type"] == "T"
+
+    # Both sources share the same connection, so the original source also sees the new table
+    assert "new_table" in source.get_tables()
+
+    # Test with multiple tables
+    multi_source = source.create_sql_expr_source({
+        "b_cells": "SELECT * FROM obs WHERE cell_type = 'B'",
+        "count_by_type": "SELECT cell_type, COUNT(*) as count FROM obs GROUP BY cell_type"
+    })
+
+    # Verify both tables exist
+    assert "b_cells" in multi_source.get_tables()
+    assert "count_by_type" in multi_source.get_tables()
+
+    # Check contents of the tables
+    b_cells = multi_source.get("b_cells")
+    assert len(b_cells) == 2  # There are 2 B cells in the fixed sample
+    assert all(b_cells["cell_type"] == "B")
+
+    count_by_type = multi_source.get("count_by_type")
+    assert len(count_by_type) == 3  # There are 3 cell types (B, T, NK)
+
+    # Check that correct counts are present
+    b_count = count_by_type[count_by_type["cell_type"] == "B"]["count"].iloc[0]
+    assert b_count == 2
+
+    t_count = count_by_type[count_by_type["cell_type"] == "T"]["count"].iloc[0]
+    assert t_count == 1
+
+    nk_count = count_by_type[count_by_type["cell_type"] == "NK"]["count"].iloc[0]
+    assert nk_count == 1
+
+    # Test that the tables are actually materialized
+    all_tables = [item[0] for item in multi_source._connection.execute("SHOW TABLES").fetchall()]
+    assert "b_cells" in all_tables
+    assert "count_by_type" in all_tables

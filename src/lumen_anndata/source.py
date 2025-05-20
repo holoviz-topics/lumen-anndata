@@ -472,15 +472,12 @@ class AnnDataSource(DuckDBSource):
 
     def get_tables(self, materialized_only: bool = False) -> list[str]:
         """Get list of available tables."""
+        all_tables = set(super().get_tables())
         if materialized_only:
-            return self._materialized_tables[:]
-
-        potential_tables = set(self._component_registry.keys())
-        if self._adata_store:
-            potential_tables.add("obs")
-            potential_tables.add("var")
-
-        return sorted(list(potential_tables))
+            all_tables |= set(self._materialized_tables)
+        else:
+            all_tables |= set(self._component_registry.keys())
+        return sorted(all_tables)
 
     def execute(self, sql_query: str, *args: Any, **kwargs: Any) -> pd.DataFrame:
         """Execute SQL query, automatically materializing referenced AnnData tables if needed."""
