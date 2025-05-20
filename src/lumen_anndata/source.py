@@ -63,8 +63,11 @@ class AnnDataSource(DuckDBSource):
     _obs_ids_selected: np.ndarray | list[str] | None = None
     _var_ids_selected: np.ndarray | list[str] | None = None
 
-    def __init__(self, adata: AnnData, **params: Any):
+    def __init__(self, **params: Any):
         """Initialize AnnDataSource from an AnnData object or file path."""
+        if adata := params.get("adata") is None:
+            raise ValueError("Parameter 'adata' must be provided as an AnnData object or path to a .h5ad file.")
+
         # Initialize internal state from params if provided (for Lumen's state management)
         self._component_registry = params.pop("_component_registry", {})
         self._materialized_tables = params.pop("_materialized_tables", [])
