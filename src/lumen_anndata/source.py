@@ -69,11 +69,11 @@ class AnnDataSource(DuckDBSource):
             raise ValueError("Parameter 'adata' must be provided as an AnnData object or path to a .h5ad file.")
 
         # Initialize internal state from params if provided (for Lumen's state management)
-        self._component_registry = params.pop("_component_registry", {})
-        self._materialized_tables = params.pop("_materialized_tables", [])
-        self._obs_ids_selected = params.pop("_obs_ids_selected", None)
-        self._var_ids_selected = params.pop("_var_ids_selected", None)
-        self._adata_store = params.pop("_adata_store", None)
+        self._adata_store = adata
+        self._component_registry = {}
+        self._materialized_tables = []
+        self._obs_ids_selected = None
+        self._var_ids_selected = None
 
         if self._adata_store is None:
             if isinstance(adata, (str, pathlib.Path)):
@@ -274,7 +274,11 @@ class AnnDataSource(DuckDBSource):
                 elif array_like.ndim == 2:
                     df = pd.DataFrame(array_like, columns=[f"{adata_key}_{i}" for i in range(array_like.shape[1])])
                 else:
-                    return None  # Cannot easily represent >2D array as single SQL table
+                    raise ValueError(
+                        f"Cannot convert {table_name} (key: {adata_key}) to SQL DataFrame: "
+                        f"Unsupported array dimension {array_like.ndim}."
+                        " Only 1D and 2D arrays are supported."
+                    )  # Cannot easily represent >2D array as single SQL table
             else:
                 return None
 
@@ -474,15 +478,16 @@ class AnnDataSource(DuckDBSource):
 
     def get_tables(self, materialized_only: bool = False) -> list[str]:
         """Get list of available tables."""
+        db_tables = super().get_tables()
         if materialized_only:
-            return self._materialized_tables[:]
+            return self._materialized_tables[:] + db_tables
 
         potential_tables = set(self._component_registry.keys())
         if self._adata_store:
             potential_tables.add("obs")
             potential_tables.add("var")
 
-        return sorted(list(potential_tables))
+        return sorted(list(potential_tables)) + db_tables
 
     def execute(self, sql_query: str, *args: Any, **kwargs: Any) -> pd.DataFrame:
         """Execute SQL query, automatically materializing referenced AnnData tables if needed."""
