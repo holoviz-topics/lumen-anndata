@@ -3,10 +3,15 @@ Lumen AI - Scanpy Explorer.
 
 This is a simple web application that allows users to explore Scanpy datasets using Lumen AI.
 """
+import logging
 from pathlib import Path
 
+import anndata as ad
 import lumen.ai as lmai
 import panel as pn
+import pooch
+
+import source
 
 pn.config.disconnect_notification = "Connection lost, try reloading the page!"
 pn.config.ready_notification = "Application fully loaded."
@@ -21,9 +26,26 @@ db_uri = str(Path(__file__).parent / "embeddings" / "scanpy.db")
 vector_store = lmai.vector_store.DuckDBVectorStore(uri=db_uri, embeddings=lmai.embeddings.OpenAIEmbeddings())
 doc_lookup = lmai.tools.VectorLookupTool(vector_store=vector_store, n=3)
 
+
+fname_brca = pooch.retrieve(
+    url="https://storage.googleapis.com/tcga-anndata-public/test2025-04/brca_test.h5ad",
+    known_hash="md5:0e17ecf3716174153bc31988ba6dd161"
+)
+
+brca_ad = ad.read_h5ad(fname_brca)
+logging.debug(f"AnnData Loaded: {brca_ad}")
+
+brca = source.AnnDataSource(brca_ad)
+logging.debug(f"AnnDataSource: {brca}")
+
+
 ui = lmai.ExplorerUI(
+    data=brca,
     agents=[lmai.agents.ChatAgent(tools=[doc_lookup], template_overrides={"main": {"instructions": INSTRUCTIONS}})],
-    llm=lmai.llm.LlamaCpp(),
-    default_agents=[], log_level="debug"
+    llm=lmai.llm.OpenAI(),
+    default_agents=[], log_level="debug",
+    # data=[
+    #     "/Users/cvaske/Downloads/brca_test.h5ad"
+    # ]
 )
 ui.servable()
