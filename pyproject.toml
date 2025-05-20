@@ -70,6 +70,7 @@ mypy = [
     "typing-extensions",
 ]
 
+
 [tool.ruff]
 exclude = [
     ".git",
@@ -84,29 +85,27 @@ exclude = [
     "examples",
     ".ipynb_checkpoints",
     "node_modules",
+    "apps",
 ]
 line-length = 165
 fix = true
 
 [tool.ruff.lint]
 ignore = [
-    "D203", # one-blank-line-before-class and `no-blank-line-before-class` (D211) are incompatible.
-    "D205", # one-line-summary-first-line
-    "D212", # multi-line-summary-first-line. Alternative is to ignore D213 `multi-line-summary-second-line
-    "D401",  # multi-line-docstring-first-line
-    "E402",  # Module level import not at top of file
-    "E712",  # Avoid equality comparisons to True
-    "E731",  # Do not assign a lambda expression, use a def
-    "N803",  # Argument name should be lowercase
-    "N806",  # Variable name should be lowercase
+    "E402", # Module level import not at top of file
+    "E712", # Avoid equality comparisons to True; use if {cond}: for truth checks
+    "E731", # Do not assign a lambda expression, use a def
+    "E741", # Ambiguous variable name
+    "W605", # Invalid escape sequence
+    "E701", # Multiple statements on one line
+    "B006", # Do not use mutable data structures for argument defaults
+    "B905", # `zip()` without an explicit `strict=` parameter
 ]
 select = [
-    "B",    # flake8-bugbear
-    "D",    # pydocstyle
-    "E",    # pycodestyle errors
-    "F",    # pyflakes
-    "W",    # pycodestyle warnings
-    "I",    # isort
+    "B",
+    "E",
+    "F",
+    "W",
     "PIE",
     "T20",
     "RUF006",
@@ -120,18 +119,25 @@ select = [
     "UP034",
     "UP036",
 ]
-
-[tool.ruff.lint.pydocstyle]
-convention = "numpy"
+unfixable = [
+    "F401", # Unused imports
+    "F841", # Unused variables
+]
 
 [tool.ruff.lint.per-file-ignores]
-# Ignore all directories named `tests`.
-"tests/**" = ["D"]
-# Ignore all files that end in `_test.py`.
-"*_test.py" = ["D"]
+"panel/tests/ui/jupyter_server_test_config.py" = ["F821"]
+"panel/compiler.py" = ["T201"]
+"panel/io/convert.py" = ["T201"]
+"panel/pane/vtk/synchronizable_*.py" = ["T201"]
+"scripts/*.py" = ["T201"]
+"hatch_build.py" = ["T201"]
 
-[tool.ruff.lint.isort]
-force-single-line = true
+[tool.isort]
+force_grid_wrap = 4
+multi_line_output = 5
+combine_as_imports = true
+lines_between_types = 1
+include_trailing_comma = true
 
 [tool.pytest.ini_options]
 addopts = "--pyargs --doctest-ignore-import-errors --color=yes"

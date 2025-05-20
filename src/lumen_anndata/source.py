@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import pathlib
-from typing import Any, Literal, Union, cast
+
+from typing import (
+    Any, Literal, Union, cast,
+)
 
 import anndata as ad
 import numpy as np
 import pandas as pd
 import param
 import scipy.sparse as sp
+
 from anndata import AnnData
-from lumen.sources.duckdb import DuckDBSource, cached
+from lumen.sources.duckdb import DuckDBSource
 from lumen.transforms import SQLFilter
 from sqlglot import parse_one
 from sqlglot.expressions import Table
@@ -435,9 +439,22 @@ class AnnDataSource(DuckDBSource):
 
         return conditions
 
-    @cached
+    # @cached  # TODO: figure out what to do with this alongside reset_selection
     def get(self, table: str, **query: Any) -> Union[pd.DataFrame, AnnData]:
-        """Get data from AnnData as DataFrame or filtered AnnData object."""
+        """Get data from AnnData as DataFrame or filtered AnnData object.
+
+        Parameters
+        ----------
+        table : str
+            Name of the table to query (e.g., 'obs', 'var', 'X', etc.).
+        query : dict
+            Additional query parameters to filter the data, e.g. {'obs_id': ['cell1', 'cell2']}.
+
+        Returns
+        -------
+        Union[pd.DataFrame, AnnData]
+            DataFrame or AnnData object containing the queried data.
+        """
         query.pop("__dask", None)  # Remove dask-specific parameter
         return_type = cast(Literal["pandas", "anndata"], query.pop("return_type", "pandas"))
         sql_transforms = query.pop("sql_transforms", [])
