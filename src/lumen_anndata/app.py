@@ -13,7 +13,7 @@ import lumen.ai as lmai
 import panel as pn
 import pooch
 
-from .source import AnnDataSource
+from lumen_anndata.source import AnnDataSource
 
 pn.config.disconnect_notification = "Connection lost, try reloading the page!"
 pn.config.ready_notification = "Application fully loaded."
@@ -54,7 +54,7 @@ fname_brca = pooch.retrieve(
 brca_ad = ad.read_h5ad(fname_brca)
 logging.debug(f"AnnData Loaded: {brca_ad}")
 
-brca = AnnDataSource(brca_ad)
+brca = AnnDataSource(adata=brca_ad)
 logging.debug(f"AnnDataSource: {brca}")
 
 ui = lmai.ExplorerUI(
@@ -68,5 +68,6 @@ ui = lmai.ExplorerUI(
     llm=lmai.llm.OpenAI(),
     default_agents=[],
     log_level="debug",
+    table_upload_callbacks={"h5ad": upload_h5ad},
 )
 ui.servable()
