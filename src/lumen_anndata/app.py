@@ -1,34 +1,68 @@
-"""
-Lumen AI - Scanpy Explorer.
-
-This is a simple web application that allows users to explore Scanpy datasets using Lumen AI.
-"""
-
-import logging
-
-from pathlib import Path
+from typing import Literal
 
 import anndata as ad
+import datashader as ds
+import holoviews as hv
 import lumen.ai as lmai
 import panel as pn
+import param
 import pooch
+import scanpy as sc
+
+from holoviews.operation import Operation
+from holoviews.operation.datashader import datashade, spread
 
 from lumen_anndata.source import AnnDataSource
 
-pn.config.disconnect_notification = "Connection lost, try reloading the page!"
-pn.config.ready_notification = "Application fully loaded."
-pn.extension("filedropper")
-
-INSTRUCTIONS = """
-You are an expert scientist working in Python, with a specialty using Anndata and Scanpy.
-Help the user with their questions, and if you don't know the answer, say so.
-"""
-
-db_uri = str(Path(__file__).parent / "embeddings" / "scanpy.db")
-vector_store = lmai.vector_store.DuckDBVectorStore(
-    uri=db_uri, embeddings=lmai.embeddings.OpenAIEmbeddings()
+anndata_file_path = pooch.retrieve(
+    url="https://datasets.cellxgene.cziscience.com/ad4aac9c-28e6-4a1f-ab48-c4ae7154c0cb.h5ad",
+    fname="ad4aac9c-28e6-4a1f-ab48-c4ae7154c0cb.h5ad",
+    known_hash="00ee1a7d9dbb77dc5b8e27d868d3c371f1f53e6ef79a18e5f1fede166b31e2eb",
+    path="data-download"
 )
-doc_lookup = lmai.tools.VectorLookupTool(vector_store=vector_store, n=3)
+
+adata = pn.state.as_cached('anndata', ad.read_h5ad, filename='./data-download/ad4aac9c-28e6-4a1f-ab48-c4ae7154c0cb.h5ad')
+
+# read sample data
+adata = sc.datasets.pbmc68k_reduced()
+
+src = AnnDataSource(adata=adata)
+
+lmai.memory['sources'] = [src]
+lmai.memory['source'] = src
+
+obs = src.get('obs')
+
+class labeller(Operation):
+
+    column = param.String()
+
+    max_labels = param.Integer(10)
+
+    min_count = param.Integer(default=100)
+
+    streams = param.List([hv.streams.RangeXY])
+
+    x_range = param.Tuple(default=None, length=2, doc="""
+       The x_range as a tuple of min and max x-value. Auto-ranges
+       if set to None.""")
+
+    y_range = param.Tuple(default=None, length=2, doc="""
+       The x_range as a tuple of min and max x-value. Auto-ranges
+       if set to None.""")
+
+    def _process(self, el, key=None):
+        if self.p.x_range and self.p.y_range:
+            el = el[slice(*self.p.x_range), slice(*self.p.y_range)]
+        df = el.dframe()
+        xd, yd, cd = el.dimensions()[:3]
+        col = self.p.column or cd.name
+        result = df.groupby(col).agg(
+            count=(col, 'size'),  # count of rows per group
+            x=(xd.name, 'mean'),
+            y=(yd.name, 'mean')
+        ).query(f'count > {self.p.min_count}').sort_values('count', ascending=False).iloc[:self.p.max_labels].reset_index()
+        return hv.Labels(result, ['x', 'y'], col)
 
 
 def upload_h5ad(file, table) -> int:
@@ -38,36 +72,35 @@ def upload_h5ad(file, table) -> int:
     adata = ad.read_h5ad(file)
     try:
         src = AnnDataSource(adata=adata)
-        lmai.memory["sources"] = lmai.memory["sources"] + [src]
-        lmai.memory["source"] = src
+        lmai.memory['sources'] = lmai.memory["sources"] + [src]
+        lmai.memory['source'] = src
         return 1
-    except Exception as e:
-        print(f"Error uploading file: {e}")
+    except Exception:
         return 0
 
 
-fname_brca = pooch.retrieve(
-    url="https://storage.googleapis.com/tcga-anndata-public/test2025-04/brca_test.h5ad",
-    known_hash="md5:0e17ecf3716174153bc31988ba6dd161",
-)
+def umap_plot(source, category: Literal[tuple(obs.columns)] | None = None):
+    """
+    Plots a UMAP plot of the current source data and optionally colors by category.
+    """
+    adata = source.get('obs', return_type="adata")
+    data = tuple(adata.obsm["X_umap"].T)
+    vdims = []
+    agg = 'count'
+    if category:
+        data = data+(adata.obs[category].values,)
+        vdims = [category]
+        agg = ds.count_cat(category)
+    points = hv.Points(data, vdims=vdims)
+    shaded = spread(datashade(points, aggregator=agg), px=4).opts(responsive=True, height=600, xaxis=None, yaxis=None, show_legend=True, show_grid=True)
+    if category:
+        return pn.panel(shaded * labeller(points).opts(text_color='black'))
+    return pn.panel(shaded)
 
-brca_ad = ad.read_h5ad(fname_brca)
-logging.debug(f"AnnData Loaded: {brca_ad}")
-
-brca = AnnDataSource(adata=brca_ad)
-logging.debug(f"AnnDataSource: {brca}")
-
-ui = lmai.ExplorerUI(
-    data=brca,
-    agents=[
-        lmai.agents.ChatAgent(
-            tools=[doc_lookup],
-            template_overrides={"main": {"instructions": INSTRUCTIONS}},
-        )
-    ],
-    llm=lmai.llm.OpenAI(),
-    default_agents=[],
-    log_level="debug",
-    table_upload_callbacks={"h5ad": upload_h5ad},
-)
-ui.servable()
+lmai.ExplorerUI(
+    title='AnnData Explorer',
+    tools=[lmai.tools.FunctionTool(umap_plot, requires=['source'])],
+    table_upload_callbacks={
+        ".h5ad": upload_h5ad,
+    },
+).servable()
