@@ -316,9 +316,11 @@ class AnnDataSource(DuckDBSource):
         if df is not None:
             try:
                 self.connection.register(table_name, df)
-                self._materialized_tables.append(table_name)
             except Exception as e:
-                raise RuntimeError(f"Failed to register table '{table_name}' with DuckDB: {e}") from e
+                # Create empty table
+                self.connection.execute(f"CREATE TABLE {table_name} AS SELECT * FROM (SELECT 1 AS dummy) WHERE 0")
+                self.param.warning(f"Failed to register table '{table_name}' with DuckDB: {e}")
+            self._materialized_tables.append(table_name)
         else:
             # Do not raise error here, as some 'uns' items might not be convertible.
             # Let subsequent SQL query fail if the table is truly needed and couldn't be made.
