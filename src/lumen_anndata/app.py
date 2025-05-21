@@ -90,7 +90,6 @@ async def load_data():
             path="data-download"
         )
         adata = pn.state.as_cached('anndata', ad.read_h5ad, filename=anndata_file_path)
-        adata = sc.datasets.pbmc68k_reduced()
         src = AnnDataSource(adata=adata)
         lmai.memory['sources'] = [src]
         lmai.memory['source'] = src
@@ -101,6 +100,7 @@ ui = lmai.ExplorerUI(
     table_upload_callbacks={
         ".h5ad": upload_h5ad,
     },
+    log_level="DEBUG"
 )
 pn.state.onload(load_data)
 ui.servable()
