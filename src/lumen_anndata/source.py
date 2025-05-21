@@ -56,13 +56,6 @@ class AnnDataSource(DuckDBSource):
 
     source_type = "anndata"
 
-    _adata_store: AnnData | None = None
-    _component_registry: ComponentRegistry = {}
-    _materialized_tables: list[str] = []
-
-    _obs_ids_selected: np.ndarray | list[str] | None = None
-    _var_ids_selected: np.ndarray | list[str] | None = None
-
     def __init__(self, **params: Any):
         """Initialize AnnDataSource from an AnnData object or file path."""
         adata = params.get("adata")
