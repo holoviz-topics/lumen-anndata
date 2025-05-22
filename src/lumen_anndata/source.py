@@ -492,11 +492,11 @@ class AnnDataSource(DuckDBSource):
             if not self._is_table_excluded(t[0])
         }
         if materialized_only:
-            all_tables |= set(self._materialized_tables)
-        else:
             # TODO: figure out why SHOW TABLES on create_source_sql_expr results in all tables
             # even if not materialized...
             all_tables -= set(self._component_registry.keys()) - set(self._materialized_tables)
+        else:
+            all_tables |= set(self._component_registry)
         return sorted(all_tables)
 
     def execute(self, sql_query: str, *args: Any, **kwargs: Any) -> pd.DataFrame:
