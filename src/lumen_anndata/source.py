@@ -15,6 +15,8 @@ import param
 import scipy.sparse as sp
 
 from anndata import AnnData
+from lumen.config import config
+from lumen.serializers import Serializer
 from lumen.sources.duckdb import DuckDBSource
 from lumen.transforms import SQLFilter
 from sqlglot import parse_one
@@ -64,7 +66,7 @@ class AnnDataSource(DuckDBSource):
 
         # Initialize internal state from params if provided (for Lumen's state management)
         self._component_registry = {}
-        self._materialized_tables = []
+        self.tables = []
         self._obs_ids_selected = None
         self._var_ids_selected = None
         if isinstance(adata, (str, pathlib.Path)):
@@ -92,11 +94,12 @@ class AnnDataSource(DuckDBSource):
         params["mirrors"] = initial_mirrors
         super().__init__(**params)
 
+        self.tables = []
         if self._adata_store and self.connection and initial_mirrors:
             for table_name, df in initial_mirrors.items():
                 self.connection.register(table_name, df)
-                if table_name not in self._materialized_tables:
-                    self._materialized_tables.append(table_name)
+                if table_name not in self.tables:
+                    self.tables.append(table_name)
 
     @staticmethod
     def _get_adata_slice_labels(
@@ -294,7 +297,7 @@ class AnnDataSource(DuckDBSource):
 
     def _ensure_table_materialized(self, table_name: str):
         """Materialize an AnnData component into a DuckDB table if not already done."""
-        if table_name in self._materialized_tables:
+        if table_name in self.tables:
             return
         if table_name not in self._component_registry:
             if table_name not in self.get_tables():
@@ -320,7 +323,7 @@ class AnnDataSource(DuckDBSource):
                 # Create empty table
                 self.connection.execute(f"CREATE TABLE {table_name} AS SELECT * FROM (SELECT 1 AS dummy) WHERE 0")
                 self.param.warning(f"Failed to register table '{table_name}' with DuckDB: {e}")
-            self._materialized_tables.append(table_name)
+            self.tables.append(table_name)
         else:
             # Do not raise error here, as some 'uns' items might not be convertible.
             # Let subsequent SQL query fail if the table is truly needed and couldn't be made.
@@ -333,7 +336,7 @@ class AnnDataSource(DuckDBSource):
         if table_name == "var" and column_name == "var_id":
             return True
 
-        if table_name not in self._materialized_tables:
+        if table_name not in self.tables:
             # If table is not materialized, we can't check its columns via SQL describe.
             # Try to infer from component registry for unmaterialized components.
             if table_name in self._component_registry:
@@ -393,13 +396,13 @@ class AnnDataSource(DuckDBSource):
 
     def _get_as_dataframe(self, table: str, query: dict[str, Any], sql_transforms: list) -> pd.DataFrame:
         """Get table data as DataFrame, materializing if necessary."""
-        is_materialized = table in self._materialized_tables
+        is_materialized = table in self.tables
         is_registered = table in self._component_registry
 
         if is_registered and not is_materialized:
             self._ensure_table_materialized(table)
 
-        if table not in self._materialized_tables and table not in self.get_tables():
+        if table not in self.tables and table not in self.get_tables():
             raise ValueError(f"Table '{table}' could not be prepared for SQL query.")
 
         conditions = self._build_sql_conditions(table, query)
@@ -435,6 +438,16 @@ class AnnDataSource(DuckDBSource):
 
         return conditions
 
+    def _serialize_tables(self) -> dict[str, Any]:
+        """Serialize the tables for storage or transmission."""
+        tables = {}
+        for t in self.get_tables(materialized_only=True):
+            tdf = self.get(t)
+            serializer = Serializer._get_type(config.serializer)()
+            tables[t] = serializer.serialize(tdf)
+        return tables
+
+
     # @cached  # TODO: figure out what to do with this alongside reset_selection
     def get(self, table: str, **query: Any) -> Union[pd.DataFrame, AnnData]:
         """Get data from AnnData as DataFrame or filtered AnnData object.
@@ -469,7 +482,7 @@ class AnnDataSource(DuckDBSource):
         """Get list of available tables."""
         all_tables = set(super().get_tables())
         if materialized_only:
-            all_tables |= set(self._materialized_tables)
+            all_tables |= set(self.tables)
         else:
             all_tables |= set(self._component_registry.keys())
         return sorted(all_tables)
@@ -480,7 +493,7 @@ class AnnDataSource(DuckDBSource):
         if parsed_query:  # Ensure parsing was successful
             tables_in_query = {table.name for table in parsed_query.find_all(Table)}
             for table_name in tables_in_query:
-                if table_name in self._component_registry and table_name not in self._materialized_tables:
+                if table_name in self._component_registry and table_name not in self.tables:
                     self._ensure_table_materialized(table_name)
         return super().execute(sql_query, *args, **kwargs)
 
@@ -502,3 +515,6 @@ class AnnDataSource(DuckDBSource):
         if dim is None or dim.lower() == "var":
             self._var_ids_selected = None
         return self
+
+    def to_spec(self, context: dict[str, Any] | None = None) -> dict[str, Any]:
+        return super().to_spec(context)
