@@ -66,7 +66,7 @@ class AnnDataSource(DuckDBSource):
 
         # Initialize internal state from params if provided (for Lumen's state management)
         self._component_registry = {}
-        self.tables = []
+        self._materialized_tables = []
         self._obs_ids_selected = None
         self._var_ids_selected = None
         if isinstance(adata, (str, pathlib.Path)):
@@ -94,12 +94,17 @@ class AnnDataSource(DuckDBSource):
         params["mirrors"] = initial_mirrors
         super().__init__(**params)
 
-        self.tables = []
         if self._adata_store and self.connection and initial_mirrors:
             for table_name, df in initial_mirrors.items():
                 self.connection.register(table_name, df)
-                if table_name not in self.tables:
-                    self.tables.append(table_name)
+                if table_name not in self._materialized_tables:
+                    self._materialized_tables.append(table_name)
+
+        if self.tables is None:
+            self.tables = {}
+        self.tables.update({
+            table: table for table in self._component_registry.keys()
+        })
 
     @staticmethod
     def _get_adata_slice_labels(
@@ -297,7 +302,7 @@ class AnnDataSource(DuckDBSource):
 
     def _ensure_table_materialized(self, table_name: str):
         """Materialize an AnnData component into a DuckDB table if not already done."""
-        if table_name in self.tables:
+        if table_name in self._materialized_tables:
             return
         if table_name not in self._component_registry:
             if table_name not in self.get_tables():
@@ -323,7 +328,7 @@ class AnnDataSource(DuckDBSource):
                 # Create empty table
                 self.connection.execute(f"CREATE TABLE {table_name} AS SELECT * FROM (SELECT 1 AS dummy) WHERE 0")
                 self.param.warning(f"Failed to register table '{table_name}' with DuckDB: {e}")
-            self.tables.append(table_name)
+            self._materialized_tables.append(table_name)
         else:
             # Do not raise error here, as some 'uns' items might not be convertible.
             # Let subsequent SQL query fail if the table is truly needed and couldn't be made.
@@ -336,7 +341,7 @@ class AnnDataSource(DuckDBSource):
         if table_name == "var" and column_name == "var_id":
             return True
 
-        if table_name not in self.tables:
+        if table_name not in self._materialized_tables:
             # If table is not materialized, we can't check its columns via SQL describe.
             # Try to infer from component registry for unmaterialized components.
             if table_name in self._component_registry:
@@ -396,13 +401,13 @@ class AnnDataSource(DuckDBSource):
 
     def _get_as_dataframe(self, table: str, query: dict[str, Any], sql_transforms: list) -> pd.DataFrame:
         """Get table data as DataFrame, materializing if necessary."""
-        is_materialized = table in self.tables
+        is_materialized = table in self._materialized_tables
         is_registered = table in self._component_registry
 
         if is_registered and not is_materialized:
             self._ensure_table_materialized(table)
 
-        if table not in self.tables and table not in self.get_tables():
+        if table not in self._materialized_tables and table not in self.get_tables():
             raise ValueError(f"Table '{table}' could not be prepared for SQL query.")
 
         conditions = self._build_sql_conditions(table, query)
@@ -415,8 +420,11 @@ class AnnDataSource(DuckDBSource):
         final_sql_expr = current_sql_expr
         for transform in applied_transforms:
             final_sql_expr = transform.apply(final_sql_expr)
-
-        return self.execute(final_sql_expr)
+        try:
+            return self.execute(final_sql_expr)
+        except Exception as e:
+            self.param.warning(f"SQL execution failed: {e}")
+            return pd.DataFrame()
 
     def _build_sql_conditions(self, table: str, query: dict) -> list:
         """Build conditions for SQL filtering from selections and query."""
@@ -446,7 +454,6 @@ class AnnDataSource(DuckDBSource):
             serializer = Serializer._get_type(config.serializer)()
             tables[t] = serializer.serialize(tdf)
         return tables
-
 
     # @cached  # TODO: figure out what to do with this alongside reset_selection
     def get(self, table: str, **query: Any) -> Union[pd.DataFrame, AnnData]:
@@ -480,11 +487,16 @@ class AnnDataSource(DuckDBSource):
 
     def get_tables(self, materialized_only: bool = False) -> list[str]:
         """Get list of available tables."""
-        all_tables = set(super().get_tables())
+        all_tables = {
+            t[0] for t in self._connection.execute('SHOW TABLES').fetchall()
+            if not self._is_table_excluded(t[0])
+        }
         if materialized_only:
-            all_tables |= set(self.tables)
+            all_tables |= set(self._materialized_tables)
         else:
-            all_tables |= set(self._component_registry.keys())
+            # TODO: figure out why SHOW TABLES on create_source_sql_expr results in all tables
+            # even if not materialized...
+            all_tables -= set(self._component_registry.keys()) - set(self._materialized_tables)
         return sorted(all_tables)
 
     def execute(self, sql_query: str, *args: Any, **kwargs: Any) -> pd.DataFrame:
@@ -493,7 +505,7 @@ class AnnDataSource(DuckDBSource):
         if parsed_query:  # Ensure parsing was successful
             tables_in_query = {table.name for table in parsed_query.find_all(Table)}
             for table_name in tables_in_query:
-                if table_name in self._component_registry and table_name not in self.tables:
+                if table_name in self._component_registry and table_name not in self._materialized_tables:
                     self._ensure_table_materialized(table_name)
         return super().execute(sql_query, *args, **kwargs)
 
@@ -517,4 +529,5 @@ class AnnDataSource(DuckDBSource):
         return self
 
     def to_spec(self, context: dict[str, Any] | None = None) -> dict[str, Any]:
-        return super().to_spec(context)
+        # TODO: temporarily disable this
+        return {}
