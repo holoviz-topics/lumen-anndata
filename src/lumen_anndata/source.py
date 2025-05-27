@@ -249,7 +249,7 @@ class AnnDataSource(DuckDBSource):
                 return pd.DataFrame({r_name: r_idx[coo.row], c_name: c_idx[coo.col], "value": coo.data})
             else:  # Dense matrix
                 matrix_np = cast(np.ndarray, matrix)
-                row_indices, col_indices = np.meshgrid(np.arange(matrix_np.shape[0]), np.arange(matrix_np.shape[1]), indexing="ij")
+                row_indices, col_indices = np.indices(matrix_np.shape)
                 return pd.DataFrame(
                     {
                         r_name: r_idx[row_indices.ravel()],
@@ -529,5 +529,5 @@ class AnnDataSource(DuckDBSource):
         return self
 
     def to_spec(self, context: dict[str, Any] | None = None) -> dict[str, Any]:
-        # TODO: temporarily disable this
+        # TODO: temporarily disable this until Lumen internal supports unserializable objects
         return {}
