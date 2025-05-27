@@ -56,6 +56,14 @@ class AnnDataSource(DuckDBSource):
 
     filter_in_sql = param.Boolean(default=True, doc="Whether to apply filters in SQL or in-memory.")
 
+    include_uns = param.ClassSelector(
+        class_=(bool, list),
+        default=False,
+        doc="""Whether to include `uns` keys in the source.
+        If True, all `uns` keys are included; if a list, only specified keys are included.
+        If False, `uns` keys are not included in the source.""",
+    )
+
     source_type = "anndata"
 
     def __init__(self, **params: Any):
@@ -190,8 +198,12 @@ class AnnDataSource(DuckDBSource):
                 "adata_key": key,
                 "dim": "var",
             }
-        if adata.uns:  # Only add uns_keys if uns is not empty
-            registry["uns_keys"] = {"obj_ref": list(adata.uns.keys()), "type": "uns_keys", "adata_key": None}
+        if adata.uns and self.include_uns:  # Only add uns_keys if uns is not empty
+            if isinstance(self.include_uns, list):
+                uns_keys = [key for key in adata.uns.keys() if key in self.include_uns]
+            else:
+                uns_keys = list(adata.uns.keys())
+            registry["uns_keys"] = {"obj_ref": uns_keys, "type": "uns_keys", "adata_key": None}
             for key, item in adata.uns.items():
                 if isinstance(item, (pd.DataFrame, np.ndarray, dict, list, tuple, str, int, float, bool)):  # Common serializable types
                     registry[f"uns_{key}"] = {"obj_ref": item, "type": "uns", "adata_key": key}
