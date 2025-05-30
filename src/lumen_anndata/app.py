@@ -1,29 +1,78 @@
-"""
-Lumen AI - Scanpy Explorer.
-
-This is a simple web application that allows users to explore Scanpy datasets using Lumen AI.
-"""
-from pathlib import Path
-
+import anndata as ad
+import holoviews as hv
 import lumen.ai as lmai
-import panel as pn
+import param
 
-pn.config.disconnect_notification = "Connection lost, try reloading the page!"
-pn.config.ready_notification = "Application fully loaded."
-pn.extension("filedropper")
+from holoviews.operation import Operation
 
-INSTRUCTIONS = """
-You are an expert scientist working in Python, with a specialty using Anndata and Scanpy.
-Help the user with their questions, and if you don't know the answer, say so.
-"""
+from lumen_anndata.source import AnnDataSource
 
-db_uri = str(Path(__file__).parent / "embeddings" / "scanpy.db")
-vector_store = lmai.vector_store.DuckDBVectorStore(uri=db_uri, embeddings=lmai.embeddings.OpenAIEmbeddings())
-doc_lookup = lmai.tools.VectorLookupTool(vector_store=vector_store, n=3)
+
+class labeller(Operation):
+    column = param.String()
+
+    max_labels = param.Integer(10)
+
+    min_count = param.Integer(default=100)
+
+    streams = param.List([hv.streams.RangeXY])
+
+    x_range = param.Tuple(
+        default=None,
+        length=2,
+        doc="""
+       The x_range as a tuple of min and max x-value. Auto-ranges
+       if set to None.""",
+    )
+
+    y_range = param.Tuple(
+        default=None,
+        length=2,
+        doc="""
+       The x_range as a tuple of min and max x-value. Auto-ranges
+       if set to None.""",
+    )
+
+    def _process(self, el, key=None):
+        if self.p.x_range and self.p.y_range:
+            el = el[slice(*self.p.x_range), slice(*self.p.y_range)]
+        df = el.dframe()
+        xd, yd, cd = el.dimensions()[:3]
+        col = self.p.column or cd.name
+        result = (
+            df.groupby(col)
+            .agg(
+                count=(col, "size"),  # count of rows per group
+                x=(xd.name, "mean"),
+                y=(yd.name, "mean"),
+            )
+            .query(f"count > {self.p.min_count}")
+            .sort_values("count", ascending=False)
+            .iloc[: self.p.max_labels]
+            .reset_index()
+        )
+        return hv.Labels(result, ["x", "y"], col)
+
+
+def upload_h5ad(file, table) -> int:
+    """
+    Uploads an h5ad file and returns an AnnDataSource.
+    """
+    adata = ad.read_h5ad(file)
+    try:
+        src = AnnDataSource(adata=adata)
+        lmai.memory["sources"] = lmai.memory["sources"] + [src]
+        lmai.memory["source"] = src
+        return 1
+    except Exception:
+        return 0
+
 
 ui = lmai.ExplorerUI(
-    agents=[lmai.agents.ChatAgent(tools=[doc_lookup], template_overrides={"main": {"instructions": INSTRUCTIONS}})],
-    llm=lmai.llm.LlamaCpp(),
-    default_agents=[], log_level="debug"
+    title="AnnData Explorer",
+    table_upload_callbacks={
+        ".h5ad": upload_h5ad,
+    },
+    log_level="DEBUG",
 )
 ui.servable()
