@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pathlib
+import tempfile
 
 from typing import (
     Any, Literal, Union, cast,
@@ -18,7 +19,7 @@ from anndata import AnnData
 from lumen.config import config
 from lumen.serializers import Serializer
 from lumen.sources.duckdb import DuckDBSource
-from lumen.transforms import SQLFilter
+from lumen.transforms import SQLFilter, SQLLimit
 from sqlglot import parse_one
 from sqlglot.expressions import Table
 
@@ -52,8 +53,6 @@ class AnnDataSource(DuckDBSource):
              dense matrices to SQL. Set to 0 to disable warnings.""",
     )
 
-    ephemeral = param.Boolean(default=True, doc="Always ephemeral (in-memory) by virtue of AnnDataSource.")
-
     filter_in_sql = param.Boolean(default=True, doc="Whether to apply filters in SQL or in-memory.")
 
     include_uns = param.ClassSelector(
@@ -65,6 +64,8 @@ class AnnDataSource(DuckDBSource):
     )
 
     source_type = "anndata"
+
+    _opened = {}
 
     def __init__(self, **params: Any):
         """Initialize AnnDataSource from an AnnData object or file path."""
@@ -79,11 +80,20 @@ class AnnDataSource(DuckDBSource):
         self._obs_ids_selected = params.pop('_obs_ids_selected', None)
         self._var_ids_selected = params.pop('_var_ids_selected', None)
         if isinstance(adata, (str, pathlib.Path)):
-            self._adata_store = ad.read_h5ad(adata)
+            if str(adata) in self._opened:
+                self._adata_store = self._opened[str(adata)]
+            else:
+                self._adata_store = ad.read_h5ad(adata, backed="r+")
         elif isinstance(adata, AnnData):
-            self._adata_store = adata.copy()
+            if str(adata.filename) in self._opened:
+                self._adata_store = self._opened[str(adata.filename)]
+            else:
+                self._adata_store = adata
         else:
             raise ValueError("Invalid 'adata' parameter: must be AnnData instance or path to .h5ad file.")
+
+        if self._adata_store.filename:
+            self._opened[str(self._adata_store.filename)] = self._adata_store
 
         initial_mirrors = {}
         if self._adata_store:
@@ -520,12 +530,15 @@ class AnnDataSource(DuckDBSource):
         if table not in self._materialized_tables and table not in self.get_tables():
             raise ValueError(f"Table '{table}' could not be prepared for SQL query.")
 
+        limit = query.pop("limit", None)
         conditions = self._build_sql_conditions(table, query)
 
         current_sql_expr = self.get_sql_expr(table)
         applied_transforms = sql_transforms
         if self.filter_in_sql and conditions:
             applied_transforms = [SQLFilter(conditions=conditions)] + sql_transforms
+        if limit is not None:
+            applied_transforms.append(SQLLimit(limit=limit))
 
         final_sql_expr = current_sql_expr
         for transform in applied_transforms:
@@ -553,7 +566,6 @@ class AnnDataSource(DuckDBSource):
         for key, value in query.items():
             if self._has_column_in_sql_table(table, key) or table not in self._component_registry:
                 conditions.append((key, value))
-
         return conditions
 
     def _serialize_tables(self) -> dict[str, Any]:
@@ -597,10 +609,7 @@ class AnnDataSource(DuckDBSource):
 
     def get_tables(self, materialized_only: bool = False) -> list[str]:
         """Get list of available tables."""
-        all_tables = {
-            t[0] for t in self._connection.execute('SHOW TABLES').fetchall()
-            if not self._is_table_excluded(t[0])
-        }
+        all_tables = set({table for table in self.tables if not self._is_table_excluded(table)})
         if materialized_only:
             # TODO: figure out why SHOW TABLES on create_source_sql_expr results in all tables
             # even if not materialized...
@@ -710,5 +719,18 @@ class AnnDataSource(DuckDBSource):
         return self
 
     def to_spec(self, context: dict[str, Any] | None = None) -> dict[str, Any]:
-        # TODO: temporarily disable this until Lumen internal supports unserializable objects
-        return {}
+        filename = self._adata_store.filename
+        if filename is None:
+            # TODO: find a way to delete the file after end of Panel session...
+            filename = tempfile.mktemp(suffix=".h5ad")
+            self.param.warning(
+                "AnnDataSource was created from an in-memory AnnData object. "
+                "Saving to a temporary file for serialization. "
+                "Consider using backed='r+' to avoid this."
+            )
+            self._adata_store.write_h5ad(filename)
+            self._adata_store = ad.read_h5ad(filename, backed="r+")
+            self._opened[str(filename)] = self._adata_store
+        spec = super().to_spec()
+        spec["adata"] = filename
+        return spec
