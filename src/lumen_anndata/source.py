@@ -19,7 +19,7 @@ from anndata import AnnData
 from lumen.config import config
 from lumen.serializers import Serializer
 from lumen.sources.duckdb import DuckDBSource
-from lumen.transforms import SQLFilter, SQLLimit
+from lumen.transforms import SQLFilter
 from sqlglot import parse_one
 from sqlglot.expressions import Table
 
@@ -530,15 +530,12 @@ class AnnDataSource(DuckDBSource):
         if table not in self._materialized_tables and table not in self.get_tables():
             raise ValueError(f"Table '{table}' could not be prepared for SQL query.")
 
-        limit = query.pop("limit", None)
         conditions = self._build_sql_conditions(table, query)
 
         current_sql_expr = self.get_sql_expr(table)
         applied_transforms = sql_transforms
         if self.filter_in_sql and conditions:
             applied_transforms = [SQLFilter(conditions=conditions)] + sql_transforms
-        if limit is not None:
-            applied_transforms.append(SQLLimit(limit=limit))
 
         final_sql_expr = current_sql_expr
         for transform in applied_transforms:
