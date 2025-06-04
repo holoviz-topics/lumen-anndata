@@ -68,15 +68,16 @@ class AnnDataSource(DuckDBSource):
 
     def __init__(self, **params: Any):
         """Initialize AnnDataSource from an AnnData object or file path."""
+        connection = params.pop('_connection', None)
         adata = params.get("adata")
         if adata is None:
             raise ValueError("Parameter 'adata' must be provided as an AnnData object or path to a .h5ad file.")
 
         # Initialize internal state from params if provided (for Lumen's state management)
-        self._component_registry = {}
-        self._materialized_tables = []
-        self._obs_ids_selected = None
-        self._var_ids_selected = None
+        self._component_registry = params.pop('_component_registry', {})
+        self._materialized_tables = params.pop('_materialized_tables', [])
+        self._obs_ids_selected = params.pop('_obs_ids_selected', None)
+        self._var_ids_selected = params.pop('_var_ids_selected', None)
         if isinstance(adata, (str, pathlib.Path)):
             self._adata_store = ad.read_h5ad(adata)
         elif isinstance(adata, AnnData):
@@ -86,7 +87,8 @@ class AnnDataSource(DuckDBSource):
 
         initial_mirrors = {}
         if self._adata_store:
-            if not self._component_registry:  # Build registry if not loaded from state
+            # Build registry only if not already provided (e.g., from create_sql_expr_source)
+            if not self._component_registry:
                 self._component_registry = self._build_component_registry_map()
 
             # Prepare obs table
@@ -100,6 +102,8 @@ class AnnDataSource(DuckDBSource):
             initial_mirrors["var"] = var_df
 
         params["mirrors"] = initial_mirrors
+        if connection:
+            params['_connection'] = connection
         super().__init__(**params)
 
         if self._adata_store and self.connection and initial_mirrors:
@@ -403,13 +407,107 @@ class AnnDataSource(DuckDBSource):
 
         return final_obs_labels, final_var_labels
 
-    def _get_as_anndata(self, query: dict[str, Any]) -> AnnData:
-        """Return a filtered AnnData object based on current selections and query."""
-        obs_slice_labels = self._get_adata_slice_labels(self._adata_store.obs_names, self._obs_ids_selected)
-        var_slice_labels = self._get_adata_slice_labels(self._adata_store.var_names, self._var_ids_selected)
+    def _refine_ids_from_df(self, df: pd.DataFrame, obs_ids: Any = None, var_ids: Any = None) -> tuple[Any, Any]:
+        """Refine obs and var IDs based on what's present in a dataframe.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            DataFrame to check for obs_id and var_id columns
+        obs_ids : array-like, optional
+            Current obs IDs selection
+        var_ids : array-like, optional
+            Current var IDs selection
+
+        Returns
+        -------
+        tuple[Any, Any]
+            Refined (obs_ids, var_ids)
+        """
+        # Refine obs_ids selection based on what's present
+        if "obs_id" in df.columns and len(df) > 0:
+            current_obs_ids = df["obs_id"].unique()
+            if obs_ids is None:
+                obs_ids = pd.Series(current_obs_ids)
+            else:
+                # Keep only obs_ids that exist in the new table
+                obs_ids_series = pd.Series(obs_ids)
+                obs_ids = obs_ids_series[obs_ids_series.isin(current_obs_ids)]
+
+        # Refine var_ids selection based on what's present
+        if "var_id" in df.columns and len(df) > 0:
+            current_var_ids = df["var_id"].unique()
+            if var_ids is None:
+                var_ids = pd.Series(current_var_ids)
+            else:
+                # Keep only var_ids that exist in the new table
+                var_ids_series = pd.Series(var_ids)
+                var_ids = var_ids_series[var_ids_series.isin(current_var_ids)]
+
+        return obs_ids, var_ids
+
+    def _set_ids_from_series_or_array(self, obs_ids: Any = None, var_ids: Any = None) -> None:
+        """Set selection state from pandas Series, arrays, or None.
+
+        Parameters
+        ----------
+        obs_ids : pd.Series, array-like, or None
+            Observation IDs to set
+        var_ids : pd.Series, array-like, or None
+            Variable IDs to set
+        """
+        # Update obs_ids selection state
+        if obs_ids is not None:
+            if isinstance(obs_ids, pd.Series):
+                self._obs_ids_selected = obs_ids.values if len(obs_ids) > 0 else None
+            else:
+                self._obs_ids_selected = obs_ids if len(obs_ids) > 0 else None
+        else:
+            self._obs_ids_selected = None
+
+        # Update var_ids selection state
+        if var_ids is not None:
+            if isinstance(var_ids, pd.Series):
+                self._var_ids_selected = var_ids.values if len(var_ids) > 0 else None
+            else:
+                self._var_ids_selected = var_ids if len(var_ids) > 0 else None
+        else:
+            self._var_ids_selected = None
+
+    def _get_as_anndata(self, query: dict[str, Any], table: str | None = None) -> AnnData:
+        """Return a filtered AnnData object based on current selections and query.
+
+        Parameters
+        ----------
+        query : dict
+            Query parameters for filtering
+        table : str, optional
+            Table name with potential SQL expression to execute for getting IDs
+
+        Returns
+        -------
+        AnnData
+            Filtered AnnData object
+        """
+        obs_ids = self._obs_ids_selected
+        var_ids = self._var_ids_selected
+
+        # If selections are None and we have a table with SQL, execute it to get IDs
+        if (obs_ids is None or var_ids is None) and table and table in self.tables:
+            sql_expr = self.get_sql_expr(table)
+            # Only execute if it's not just a simple table reference
+            if sql_expr != self.sql_expr.format(table=f'"{table}"'):
+                try:
+                    df = self.execute(sql_expr)
+                    obs_ids, var_ids = self._refine_ids_from_df(df, obs_ids, var_ids)
+                except Exception as e:
+                    self.param.warning(f"Could not extract IDs from table '{table}': {e}")
+
+        obs_slice_labels = self._get_adata_slice_labels(self._adata_store.obs_names, obs_ids)
+        var_slice_labels = self._get_adata_slice_labels(self._adata_store.var_names, var_ids)
 
         final_obs_labels, final_var_labels = self._prepare_anndata_slice_from_query(obs_slice_labels, var_slice_labels, query)
-        return self._adata_store[final_obs_labels, final_var_labels].copy()
+        return self._adata_store[final_obs_labels, final_var_labels]
 
     def _get_as_dataframe(self, table: str, query: dict[str, Any], sql_transforms: list) -> pd.DataFrame:
         """Get table data as DataFrame, materializing if necessary."""
@@ -487,8 +585,8 @@ class AnnDataSource(DuckDBSource):
         return_type = cast(Literal["pandas", "anndata"], query.pop("return_type", "pandas"))
         sql_transforms = query.pop("sql_transforms", [])
 
-        if return_type == "anndata":
-            return self._get_as_anndata(query)
+        if table == "anndata" or return_type == "anndata":
+            return self._get_as_anndata(query, table)
 
         df_result = self._get_as_dataframe(table, query, sql_transforms)
         if table == "obs" and "obs_id" in df_result.columns:
@@ -520,6 +618,77 @@ class AnnDataSource(DuckDBSource):
                 if table_name in self._component_registry and table_name not in self._materialized_tables:
                     self._ensure_table_materialized(table_name)
         return super().execute(sql_query, *args, **kwargs)
+
+    def create_sql_expr_source(
+        self, tables: dict[str, str], materialize: bool = True, **kwargs
+    ):
+        """
+        Creates a new SQL Source given a set of table names and
+        corresponding SQL expressions, preserving and refining selection state.
+
+        Arguments
+        ---------
+        tables: dict[str, str]
+            Mapping from table name to SQL expression.
+        materialize: bool
+            Whether to materialize new tables
+        kwargs: any
+            Additional keyword arguments.
+
+        Returns
+        -------
+        source: AnnDataSource
+        """
+        # Prepare parameters for the new source
+        params = dict(self.param.values(), **kwargs)
+        params.pop('name', None)  # Remove name to avoid conflicts
+        params.pop('tables', None)  # Remove tables to avoid conflicts
+
+        # Pass internal state to the new source
+        params['_component_registry'] = self._component_registry
+        params['_materialized_tables'] = self._materialized_tables.copy()
+        params['_obs_ids_selected'] = self._obs_ids_selected
+        params['_var_ids_selected'] = self._var_ids_selected
+
+        # Reuse connection unless it has changed
+        if 'uri' not in kwargs and 'initializers' not in kwargs:
+            params['_connection'] = self._connection
+
+        # Create the new source using parent's method
+        source = super().create_sql_expr_source(tables.copy(), materialize, **params)
+
+        # Update the new source's tables with SQL expressions from all registered components
+        source.tables.update({
+            table: self.get_sql_expr(table)
+            for table in self._component_registry.keys()
+        })
+
+        # Refine selections based on what's actually present in the new tables
+        obs_ids = self._obs_ids_selected
+        var_ids = self._var_ids_selected
+
+        for table_name in tables:
+            try:
+                # Get the data from the new source without updating its selections
+                # We're just checking what's present, not making a selection
+                sql_expr = source.get_sql_expr(table_name)
+                df = source.execute(sql_expr)
+
+                # Use helper method to refine IDs
+                obs_ids, var_ids = self._refine_ids_from_df(df, obs_ids, var_ids)
+
+            except Exception as e:
+                # If we can't get the table, skip refining selections for it
+                self.param.warning(f"Could not refine selections for table '{table_name}': {e}")
+                continue
+
+        # Update the new source's selection state using helper method
+        source._set_ids_from_series_or_array(obs_ids, var_ids)
+
+        # Ensure the new source has access to the AnnData store
+        source._adata_store = self._adata_store
+
+        return source
 
     def reset_selection(self, dim: str | None = None) -> "AnnDataSource":
         """Reset selection tracking for specified dimension(s).
