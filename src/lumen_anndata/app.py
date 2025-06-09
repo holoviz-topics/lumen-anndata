@@ -1,10 +1,12 @@
 from pathlib import Path
 
-import anndata as ad
 import lumen.ai as lmai
 import panel as pn
 
-from lumen_anndata.source import AnnDataSource
+from lumen_anndata.analysis import (
+    ComputeEmbeddingAnalysis, LeidenUMAPAnalysis, ManifoldMapAnalysis,
+)
+from lumen_anndata.utils import upload_h5ad
 
 pn.config.disconnect_notification = "Connection lost, try reloading the page!"
 pn.config.ready_notification = "Application fully loaded."
@@ -28,23 +30,6 @@ and suggest other relevant entries that might help the user.
 """
 
 
-def upload_h5ad(file, table) -> int:
-    """
-    Uploads an h5ad file and returns an AnnDataSource.
-    """
-    adata = ad.read_h5ad(file)
-    try:
-        src = AnnDataSource(adata=adata)
-        lmai.memory["sources"] = lmai.memory["sources"] + [src]
-        lmai.memory["source"] = src
-        return 1
-    except Exception:
-        return 0
-
-db_uri = str(Path(__file__).parent / "embeddings" / "scanpy.db")
-vector_store = lmai.vector_store.DuckDBVectorStore(uri=db_uri, embeddings=lmai.embeddings.OpenAIEmbeddings())
-doc_lookup = lmai.tools.VectorLookupTool(vector_store=vector_store, n=3)
-
 db_uri = str(Path(__file__).parent / "embeddings" / "scanpy.db")
 vector_store = lmai.vector_store.DuckDBVectorStore(uri=db_uri, embeddings=lmai.embeddings.OpenAIEmbeddings())
 doc_lookup = lmai.tools.VectorLookupTool(vector_store=vector_store, n=3)
@@ -54,6 +39,7 @@ ui = lmai.ExplorerUI(
     table_upload_callbacks={
         ".h5ad": upload_h5ad,
     },
-    log_level="debug",
+    analyses=[ManifoldMapAnalysis, LeidenUMAPAnalysis, ComputeEmbeddingAnalysis],
+    log_level="DEBUG",
 )
 ui.servable()

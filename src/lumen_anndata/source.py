@@ -5,6 +5,7 @@ from __future__ import annotations
 import pathlib
 import tempfile
 
+from copy import deepcopy
 from typing import (
     Any, Literal, Union, cast,
 )
@@ -20,6 +21,7 @@ from lumen.config import config
 from lumen.serializers import Serializer
 from lumen.sources.duckdb import DuckDBSource
 from lumen.transforms import SQLFilter
+from lumen.util import resolve_module_reference
 from sqlglot import parse_one
 from sqlglot.expressions import Table
 
@@ -50,8 +52,7 @@ class AnnDataSource(DuckDBSource):
     dense_matrix_warning_threshold = param.Integer(
         default=1_000_000,
         doc="""Threshold (number of elements) above which to warn when materializing
-             dense matrices to SQL. Set to 0 to disable warnings.""",
-    )
+             dense matrices to SQL. Set to 0 to disable warnings.""")
 
     filter_in_sql = param.Boolean(default=True, doc="Whether to apply filters in SQL or in-memory.")
 
@@ -60,8 +61,13 @@ class AnnDataSource(DuckDBSource):
         default=False,
         doc="""Whether to include `uns` keys in the source.
         If True, all `uns` keys are included; if a list, only specified keys are included.
-        If False, `uns` keys are not included in the source.""",
-    )
+        If False, `uns` keys are not included in the source.""")
+
+    # Can't figure how to handle SQL tables without rebuilding the entire source
+    # so we just apply operations when getting data as AnnData.
+    operations = param.HookList(default=[], doc="""
+        Operations to apply to the AnnData object
+        ONLY when getting data with return_type='anndata'.""")
 
     source_type = "anndata"
 
@@ -83,7 +89,7 @@ class AnnDataSource(DuckDBSource):
             if str(adata) in self._opened:
                 self._adata_store = self._opened[str(adata)]
             else:
-                self._adata_store = ad.read_h5ad(adata, backed="r+")
+                self._adata_store = ad.read_h5ad(adata)
         elif isinstance(adata, AnnData):
             if str(adata.filename) in self._opened:
                 self._adata_store = self._opened[str(adata.filename)]
@@ -484,6 +490,24 @@ class AnnDataSource(DuckDBSource):
         else:
             self._var_ids_selected = None
 
+    def _apply_operations(self, adata: AnnData) -> None:
+        """Ensure all tables required by operations are materialized."""
+        if not self.operations:
+            return
+
+        required_tables = []
+        for operation in self.operations:
+            required_tables.extend(operation.requires)
+
+        # Materialize required tables that aren't already materialized
+        for table in required_tables:
+            if table and table in self._component_registry:
+                self._ensure_table_materialized(table)
+
+        for operation in self.operations:
+            adata = operation.apply(adata)
+        return adata
+
     def _get_as_anndata(self, query: dict[str, Any], table: str | None = None) -> AnnData:
         """Return a filtered AnnData object based on current selections and query.
 
@@ -517,7 +541,12 @@ class AnnDataSource(DuckDBSource):
         var_slice_labels = self._get_adata_slice_labels(self._adata_store.var_names, var_ids)
 
         final_obs_labels, final_var_labels = self._prepare_anndata_slice_from_query(obs_slice_labels, var_slice_labels, query)
-        return self._adata_store[final_obs_labels, final_var_labels]
+        adata = self._adata_store[final_obs_labels, final_var_labels]
+
+        if self.operations:
+            self._apply_operations(adata)
+
+        return adata
 
     def _get_as_dataframe(self, table: str, query: dict[str, Any], sql_transforms: list) -> pd.DataFrame:
         """Get table data as DataFrame, materializing if necessary."""
@@ -726,8 +755,73 @@ class AnnDataSource(DuckDBSource):
                 "Consider using backed='r+' to avoid this."
             )
             self._adata_store.write_h5ad(filename)
-            self._adata_store = ad.read_h5ad(filename, backed="r+")
+            self._adata_store = ad.read_h5ad(filename)
             self._opened[str(filename)] = self._adata_store
-        spec = super().to_spec()
+        spec = super().to_spec(context)
         spec["adata"] = filename
+
+        # Handle operations serialization
+        operations = spec.pop("operations", None)
+        if not operations:
+            return spec
+
+        spec["operations"] = []
+        for operation in operations:
+            op_spec = {"type": f"{operation.__module__}.{type(operation).__name__}"}
+            for k, v in operation.param.values().items():
+                # Get the default value from the operation's class parameter
+                param_obj = getattr(type(operation).param, k, None)
+                if param_obj is None:
+                    continue
+                default = param_obj.default
+                try:
+                    is_equal = default is v
+                    if not is_equal:
+                        is_equal = default == v
+                except Exception:
+                    is_equal = False
+                if k == 'name' or is_equal:
+                    continue
+                else:
+                    op_spec[k] = v
+            spec['operations'].append(op_spec)
         return spec
+
+    @classmethod
+    def from_spec(cls, spec: dict[str, Any] | str) -> "AnnDataSource":
+        """Create AnnDataSource from specification.
+
+        Parameters
+        ----------
+        spec : dict or str
+            Source specification
+
+        Returns
+        -------
+        AnnDataSource
+            Instantiated source
+        """
+        if isinstance(spec, str):
+            # If spec is a string, assume it's a file path
+            return cls(adata=spec)
+
+        spec = deepcopy(spec)
+
+        # Handle operations deserialization
+        operation_specs = spec.pop("operations", [])
+        if operation_specs:
+            operations = []
+            for op in operation_specs:
+                if isinstance(op, dict):
+                    # Need to instantiate from spec
+                    op_spec = deepcopy(op)
+                    op_type = op_spec.pop('type')
+                    op_class = resolve_module_reference(op_type)
+                    operations.append(op_class(**op_spec))
+                else:
+                    # Already instantiated
+                    operations.append(op)
+            spec["operations"] = operations
+
+        # Use parent class from_spec for everything else
+        return super().from_spec(spec)
