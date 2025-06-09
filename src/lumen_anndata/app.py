@@ -1,57 +1,31 @@
-import anndata as ad
-import holoviews as hv
-import lumen.ai as lmai
-import param
+from pathlib import Path
 
-from holoviews.operation import Operation
+import anndata as ad
+import lumen.ai as lmai
+import panel as pn
 
 from lumen_anndata.source import AnnDataSource
 
+pn.config.disconnect_notification = "Connection lost, try reloading the page!"
+pn.config.ready_notification = "Application fully loaded."
+pn.extension("filedropper")
 
-class labeller(Operation):
-    column = param.String()
+INSTRUCTIONS = """
+You are an expert scientist working in Python, with a specialty using Anndata and Scanpy.
+All of your answers must be grounded in the provided embedding context by citing specific entries where applicable.
+Do not assume functions or APIs exist unless they are present in the context.
+If the user asks about something not explicitly found in the context, explain
+that it could not be located and suggest any related or alternative entries
+that were found. When you refer to context entries, cite them clearly
+(e.g., by mentioning their documented signature or behavior). The
+base URL is https://scanpy.readthedocs.io/en/stable/.
 
-    max_labels = param.Integer(10)
-
-    min_count = param.Integer(default=100)
-
-    streams = param.List([hv.streams.RangeXY])
-
-    x_range = param.Tuple(
-        default=None,
-        length=2,
-        doc="""
-       The x_range as a tuple of min and max x-value. Auto-ranges
-       if set to None.""",
-    )
-
-    y_range = param.Tuple(
-        default=None,
-        length=2,
-        doc="""
-       The x_range as a tuple of min and max x-value. Auto-ranges
-       if set to None.""",
-    )
-
-    def _process(self, el, key=None):
-        if self.p.x_range and self.p.y_range:
-            el = el[slice(*self.p.x_range), slice(*self.p.y_range)]
-        df = el.dframe()
-        xd, yd, cd = el.dimensions()[:3]
-        col = self.p.column or cd.name
-        result = (
-            df.groupby(col)
-            .agg(
-                count=(col, "size"),  # count of rows per group
-                x=(xd.name, "mean"),
-                y=(yd.name, "mean"),
-            )
-            .query(f"count > {self.p.min_count}")
-            .sort_values("count", ascending=False)
-            .iloc[: self.p.max_labels]
-            .reset_index()
-        )
-        return hv.Labels(result, ["x", "y"], col)
+Prioritize accuracy over familiarity: even if a user asks about a well-known function,
+do not describe or assume its behavior unless it appears in the context.
+Prefer similar or equivalent matches in the context over standard assumptions.
+If you cannot find a match or give a confident answer, acknowledge it
+and suggest other relevant entries that might help the user.
+"""
 
 
 def upload_h5ad(file, table) -> int:
@@ -67,12 +41,19 @@ def upload_h5ad(file, table) -> int:
     except Exception:
         return 0
 
+db_uri = str(Path(__file__).parent / "embeddings" / "scanpy.db")
+vector_store = lmai.vector_store.DuckDBVectorStore(uri=db_uri, embeddings=lmai.embeddings.OpenAIEmbeddings())
+doc_lookup = lmai.tools.VectorLookupTool(vector_store=vector_store, n=3)
+
+db_uri = str(Path(__file__).parent / "embeddings" / "scanpy.db")
+vector_store = lmai.vector_store.DuckDBVectorStore(uri=db_uri, embeddings=lmai.embeddings.OpenAIEmbeddings())
+doc_lookup = lmai.tools.VectorLookupTool(vector_store=vector_store, n=3)
 
 ui = lmai.ExplorerUI(
-    title="AnnData Explorer",
+    agents=[lmai.agents.ChatAgent(tools=[doc_lookup], template_overrides={"main": {"instructions": INSTRUCTIONS}})],
     table_upload_callbacks={
         ".h5ad": upload_h5ad,
     },
-    log_level="DEBUG",
+    log_level="debug",
 )
 ui.servable()
