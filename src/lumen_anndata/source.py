@@ -12,17 +12,17 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 import param
-import scipy.sparse as sp
 
 from anndata import AnnData
 from lumen.config import config
 from lumen.serializers import Serializer
+from lumen.sources import cached
 from lumen.sources.duckdb import DuckDBSource
 from lumen.transforms import SQLFilter
 from sqlglot import parse_one
 from sqlglot.expressions import Table
 
-ComponentInfo = dict[str, Union[Any, str, bool, None, pd.DataFrame, np.ndarray, sp.spmatrix]]
+ComponentInfo = dict[str, Union[Any, str, bool, None, pd.DataFrame, np.ndarray]]
 ComponentRegistry = dict[str, ComponentInfo]
 
 
@@ -36,9 +36,7 @@ class AnnDataSource(DuckDBSource):
     - ID-based filtering (`_obs_ids_selected`, `_var_ids_selected`) tracks selections.
     - Selections are updated *only* by direct queries on `obs` or `var` tables.
     - `return_type='anndata'` efficiently returns filtered AnnData objects (copies)
-      by applying current selections and query filters directly to the AnnData object,
-      avoiding unnecessary SQL materialization of large data matrices.
-    - Use `reset_selection()` to clear current selection state.
+      by applying current selections and query filters directly to the AnnData object.
     """
 
     adata = param.ClassSelector(
@@ -46,23 +44,9 @@ class AnnDataSource(DuckDBSource):
         doc="An AnnData instance or path to a .h5ad file to load.",
     )
 
-    dense_matrix_warning_threshold = param.Integer(
-        default=1_000_000,
-        doc="""Threshold (number of elements) above which to warn when materializing
-             dense matrices to SQL. Set to 0 to disable warnings.""",
-    )
-
     ephemeral = param.Boolean(default=True, doc="Always ephemeral (in-memory) by virtue of AnnDataSource.")
 
     filter_in_sql = param.Boolean(default=True, doc="Whether to apply filters in SQL or in-memory.")
-
-    include_uns = param.ClassSelector(
-        class_=(bool, list),
-        default=False,
-        doc="""Whether to include `uns` keys in the source.
-        If True, all `uns` keys are included; if a list, only specified keys are included.
-        If False, `uns` keys are not included in the source.""",
-    )
 
     source_type = "anndata"
 
@@ -151,43 +135,6 @@ class AnnDataSource(DuckDBSource):
         registry["obs"] = {"obj_ref": adata.obs, "type": "obs", "adata_key": None}
         registry["var"] = {"obj_ref": adata.var, "type": "var", "adata_key": None}
 
-        if adata.X is not None:
-            registry["X"] = {
-                "obj_ref": adata.X,
-                "type": "matrix",
-                "adata_key": None,
-                "is_sparse": sp.issparse(adata.X),
-                "row_dim": "obs",
-                "col_dim": "var",
-            }
-
-        for key, layer in adata.layers.items():
-            registry[f"layer_{key}"] = {
-                "obj_ref": layer,
-                "type": "matrix",
-                "adata_key": key,
-                "is_sparse": sp.issparse(layer),
-                "row_dim": "obs",
-                "col_dim": "var",
-            }
-        for key, mat in adata.obsp.items():
-            registry[f"obsp_{key}"] = {
-                "obj_ref": mat,
-                "type": "matrix",
-                "adata_key": key,
-                "is_sparse": sp.issparse(mat),
-                "row_dim": "obs",
-                "col_dim": "obs",
-            }
-        for key, mat in adata.varp.items():
-            registry[f"varp_{key}"] = {
-                "obj_ref": mat,
-                "type": "matrix",
-                "adata_key": key,
-                "is_sparse": sp.issparse(mat),
-                "row_dim": "var",
-                "col_dim": "var",
-            }
         for key, arr in adata.obsm.items():
             registry[f"obsm_{key}"] = {
                 "obj_ref": arr,
@@ -202,15 +149,6 @@ class AnnDataSource(DuckDBSource):
                 "adata_key": key,
                 "dim": "var",
             }
-        if adata.uns and self.include_uns:  # Only add uns_keys if uns is not empty
-            if isinstance(self.include_uns, list):
-                uns_keys = [key for key in adata.uns.keys() if key in self.include_uns]
-            else:
-                uns_keys = list(adata.uns.keys())
-            registry["uns_keys"] = {"obj_ref": uns_keys, "type": "uns_keys", "adata_key": None}
-            for key, item in adata.uns.items():
-                if isinstance(item, (pd.DataFrame, np.ndarray, dict, list, tuple, str, int, float, bool)):  # Common serializable types
-                    registry[f"uns_{key}"] = {"obj_ref": item, "type": "uns", "adata_key": key}
         return registry
 
     def _convert_component_to_sql_df(self, table_name: str) -> pd.DataFrame | None:
@@ -232,47 +170,6 @@ class AnnDataSource(DuckDBSource):
             df = cast(pd.DataFrame, obj_data).copy()
             df["var_id"] = df.index.astype(str).values
             return df
-
-        if obj_type == "matrix":
-            matrix = obj_data
-            row_dim_type = cast(str, comp_info["row_dim"])  # 'obs' or 'var'
-            col_dim_type = cast(str, comp_info["col_dim"])  # 'obs' or 'var'
-
-            r_idx = (self._adata_store.obs_names if row_dim_type == "obs" else self._adata_store.var_names).astype(str)
-            c_idx = (self._adata_store.var_names if col_dim_type == "var" else self._adata_store.obs_names).astype(str)
-
-            r_name = (
-                "obs_id"
-                if row_dim_type == "obs" and col_dim_type == "var"
-                else (
-                    "var_id"
-                    if row_dim_type == "var" and col_dim_type == "obs"
-                    else (f"{row_dim_type}_id_1" if row_dim_type == col_dim_type else f"{row_dim_type}_id")
-                )
-            )
-            c_name = (
-                "var_id"
-                if col_dim_type == "var" and row_dim_type == "obs"
-                else (
-                    "obs_id"
-                    if col_dim_type == "obs" and row_dim_type == "var"
-                    else (f"{col_dim_type}_id_2" if row_dim_type == col_dim_type else f"{col_dim_type}_id")
-                )
-            )
-
-            if sp.issparse(matrix):
-                coo = matrix.tocoo()
-                return pd.DataFrame({r_name: r_idx[coo.row], c_name: c_idx[coo.col], "value": coo.data})
-            else:  # Dense matrix
-                matrix_np = cast(np.ndarray, matrix)
-                row_indices, col_indices = np.indices(matrix_np.shape)
-                return pd.DataFrame(
-                    {
-                        r_name: r_idx[row_indices.ravel()],
-                        c_name: c_idx[col_indices.ravel()],
-                        "value": matrix_np.ravel(),
-                    }
-                )
 
         if obj_type == "multidim":
             array_like = obj_data
@@ -325,17 +222,6 @@ class AnnDataSource(DuckDBSource):
                 raise ValueError(f"Table '{table_name}' is not a known AnnData component or predefined table.")
             return
 
-        comp_info = self._component_registry[table_name]
-        if comp_info.get("type") == "matrix":
-            matrix = comp_info["obj_ref"]
-            size = matrix.shape[0] * matrix.shape[1]
-            is_sparse = comp_info.get("is_sparse", False)
-            if not is_sparse and self.dense_matrix_warning_threshold > 0 and size > self.dense_matrix_warning_threshold:
-                self.param.warning(
-                    f"Materializing dense matrix '{table_name}' ({matrix.shape[0]}x{matrix.shape[1]} = {size:,} elements) to SQL. "
-                    f"This is MEMORY INTENSIVE. Consider using ID-based filtering with `return_type='anndata'`."
-                )
-
         df = self._convert_component_to_sql_df(table_name)
         if df is not None:
             try:
@@ -346,7 +232,6 @@ class AnnDataSource(DuckDBSource):
                 self.param.warning(f"Failed to register table '{table_name}' with DuckDB: {e}")
             self._materialized_tables.append(table_name)
         else:
-            # Do not raise error here, as some 'uns' items might not be convertible.
             # Let subsequent SQL query fail if the table is truly needed and couldn't be made.
             self.param.warning(f"Component '{table_name}' conversion to DataFrame failed; cannot materialize for SQL.")
 
@@ -565,7 +450,7 @@ class AnnDataSource(DuckDBSource):
             tables[t] = serializer.serialize(tdf)
         return tables
 
-    # @cached  # TODO: figure out what to do with this alongside reset_selection
+    @cached
     def get(self, table: str, **query: Any) -> Union[pd.DataFrame, AnnData]:
         """Get data from AnnData as DataFrame or filtered AnnData object.
 
@@ -689,25 +574,6 @@ class AnnDataSource(DuckDBSource):
         source._adata_store = self._adata_store
 
         return source
-
-    def reset_selection(self, dim: str | None = None) -> "AnnDataSource":
-        """Reset selection tracking for specified dimension(s).
-
-        Parameters
-        ----------
-        dim : str or None
-            Dimension to reset: 'obs', 'var', or None (resets both).
-
-        Returns
-        -------
-        AnnDataSource
-            The instance itself, for method chaining.
-        """
-        if dim is None or dim.lower() == "obs":
-            self._obs_ids_selected = None
-        if dim is None or dim.lower() == "var":
-            self._var_ids_selected = None
-        return self
 
     def to_spec(self, context: dict[str, Any] | None = None) -> dict[str, Any]:
         # TODO: temporarily disable this until Lumen internal supports unserializable objects
