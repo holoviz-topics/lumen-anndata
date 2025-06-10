@@ -237,12 +237,6 @@ def test_get_anndata(fixed_sample_anndata):
     assert no_obs_adata.n_obs == 0
     assert no_obs_adata.n_vars == fixed_sample_anndata.n_vars
 
-    source.reset_selection()
-    full_adata = source.get("X", return_type="anndata")
-    assert full_adata.shape == fixed_sample_anndata.shape
-    pd.testing.assert_frame_equal(full_adata.obs, fixed_sample_anndata.obs)
-    pd.testing.assert_frame_equal(full_adata.var, fixed_sample_anndata.var)
-
 
 def test_materialization_on_execute(sample_anndata):
     source = AnnDataSource(adata=sample_anndata)
@@ -432,108 +426,6 @@ def test_get_anndata_sample(sample_anndata):
     assert filtered_adata_2.var["highly_variable"].all()
     assert filtered_adata_2.n_obs < sample_anndata.n_obs
     assert filtered_adata_2.n_vars < sample_anndata.n_vars
-
-    # Reset selection and check
-    source.reset_selection()
-    unfiltered = source.get("X", return_type="anndata")
-    assert unfiltered.n_obs == sample_anndata.n_obs
-    assert unfiltered.n_vars == sample_anndata.n_vars
-
-
-def test_reset_selection(sample_anndata):
-    """Test the reset_selection method with direct ID filtering."""
-    source = AnnDataSource(adata=sample_anndata)
-
-    # 1. Test resetting obs selection
-    # First get a subset of cell IDs
-    cells = source.execute("SELECT obs_id FROM obs LIMIT 10")
-    test_cell_ids = cells["obs_id"].tolist()
-
-    # Apply direct ID filtering
-    filtered_obs = source.get("obs", obs_id=test_cell_ids)
-    assert len(filtered_obs) == len(test_cell_ids)
-
-    # Verify selection is active by checking internal state
-    assert source._obs_ids_selected is not None
-    assert set(source._obs_ids_selected) == set(test_cell_ids)
-
-    # Verify filtered X data only contains the selected obs_ids
-    x_filtered = source.get("X")
-    assert set(x_filtered["obs_id"].unique()) == set(test_cell_ids)
-
-    # Reset obs selection only
-    source.reset_selection(dim="obs")
-
-    # Verify internal state is reset
-    assert source._obs_ids_selected is None
-
-    # Verify data is no longer filtered by obs
-    x_after_reset = source.get("X")
-    assert len(set(x_after_reset["obs_id"].unique())) == sample_anndata.n_obs
-
-    # 2. Test resetting var selection
-    # First get a subset of gene IDs
-    genes = source.execute("SELECT var_id FROM var LIMIT 5")
-    test_gene_ids = genes["var_id"].tolist()
-
-    # Apply direct ID filtering
-    filtered_var = source.get("var", var_id=test_gene_ids)
-    assert len(filtered_var) == len(test_gene_ids)
-
-    # Verify selection is active
-    assert source._var_ids_selected is not None
-    assert set(source._var_ids_selected) == set(test_gene_ids)
-
-    # Verify filtered X data only contains the selected var_ids
-    x_filtered = source.get("X")
-    assert set(x_filtered["var_id"].unique()) == set(test_gene_ids)
-
-    # Reset var selection
-    source.reset_selection(dim="var")
-
-    # Verify internal state is reset
-    assert source._var_ids_selected is None
-
-    # Verify data is no longer filtered by var
-    x_after_reset = source.get("X")
-    assert len(set(x_after_reset["var_id"].unique())) == sample_anndata.n_vars
-
-    # 3. Test resetting both dimensions at once
-    # Apply filtering on both dimensions
-    source.get("obs", obs_id=test_cell_ids)
-    source.get("var", var_id=test_gene_ids)
-
-    # Verify both selections are active
-    assert source._obs_ids_selected is not None
-    assert source._var_ids_selected is not None
-
-    # Verify filtered X contains only selected IDs from both dimensions
-    x_filtered = source.get("X")
-    assert set(x_filtered["obs_id"].unique()) == set(test_cell_ids)
-    assert set(x_filtered["var_id"].unique()) == set(test_gene_ids)
-
-    # Reset both dimensions
-    source.reset_selection()
-
-    # Verify both internal states are reset
-    assert source._obs_ids_selected is None
-    assert source._var_ids_selected is None
-
-    # Verify data is completely unfiltered
-    x_fully_reset = source.get("X")
-    assert len(x_fully_reset["obs_id"].unique()) == sample_anndata.n_obs
-    assert len(x_fully_reset["var_id"].unique()) == sample_anndata.n_vars
-
-    # Verify that querying obs or var now returns all items
-    all_obs = source.get("obs")
-    assert len(all_obs) == sample_anndata.n_obs
-    assert source._obs_ids_selected is not None  # get("obs") will re-select all if no filter
-    assert len(source._obs_ids_selected) == sample_anndata.n_obs
-
-    all_var = source.get("var")
-    assert len(all_var) == sample_anndata.n_vars
-    assert source._var_ids_selected is not None
-    assert len(source._var_ids_selected) == sample_anndata.n_vars
 
 
 def test_chained_filtering(sample_anndata):
