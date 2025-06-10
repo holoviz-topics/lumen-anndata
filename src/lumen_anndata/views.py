@@ -12,18 +12,15 @@ from .operations import ComputeEmbedding, Leiden, labeller
 
 
 class ManifoldMapPanel(View):
-
     view_type = "manifold_map"
 
     def get_panel(self):
-
         hv.extension("bokeh")
 
-        return ManifoldMap(adata=self.pipeline.get(self.pipeline.table, return_type="anndata"))
+        return ManifoldMap(adata=self.pipeline.source.get(self.pipeline.table, return_type="anndata"))
 
 
 class UMAPPanel(View):
-
     category = param.Selector(
         default=None,
         objects=[
@@ -50,7 +47,6 @@ class UMAPPanel(View):
     view_type = "umap"
 
     def get_panel(self):
-
         hv.extension("bokeh")
 
         adata = self.pipeline.source.get(self.pipeline.table, return_type="anndata")
