@@ -16,7 +16,7 @@ import param
 from anndata import AnnData
 from lumen.config import config
 from lumen.serializers import Serializer
-from lumen.sources import cached
+from lumen.sources.base import cached
 from lumen.sources.duckdb import DuckDBSource
 from lumen.transforms import SQLFilter
 from sqlglot import parse_one
