@@ -1,6 +1,7 @@
 import colorcet as cc
 import datashader as ds
 import holoviews as hv
+import holoviews.plotting.bokeh  # noqa: F401
 import panel as pn
 import param
 
@@ -15,8 +16,7 @@ class ManifoldMapPanel(View):
     view_type = "manifold_map"
 
     def get_panel(self):
-        hv.extension("bokeh")
-
+        hv.Store.set_current_backend('bokeh')
         return ManifoldMap(adata=self.pipeline.source.get(self.pipeline.table, return_type="anndata"))
 
 
@@ -47,8 +47,7 @@ class UMAPPanel(View):
     view_type = "umap"
 
     def get_panel(self):
-        hv.extension("bokeh")
-
+        hv.Store.set_current_backend('bokeh')
         adata = self.pipeline.source.get(self.pipeline.table, return_type="anndata")
         if self.operation:
             adata = self.operation(**self.operation_kwargs).apply(adata)
