@@ -9,12 +9,13 @@ import param
 import scanpy as sc
 
 from holoviews.operation import Operation
+from lumen.transforms import Transform
 
 if TYPE_CHECKING:
     from anndata import AnnData
 
 
-class AnnDataOperation(param.Parameterized):
+class AnnDataOperation(Transform):
     """Base class for operations that can be applied to AnnData objects.
 
     All operations should:

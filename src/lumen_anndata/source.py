@@ -51,6 +51,10 @@ class AnnDataSource(DuckDBSource):
 
     filter_in_sql = param.Boolean(default=True, doc="Whether to apply filters in SQL or in-memory.")
 
+    operations = param.HookList(default=[], doc="""
+        Operations to apply to the AnnData object
+        ONLY when getting data with return_type='anndata'.""")
+
     source_type = "anndata"
 
     _opened = {}  # Track files: {filename: (adata_object, is_temporary)}
@@ -630,14 +634,15 @@ class AnnDataSource(DuckDBSource):
     def to_spec(self, context: dict[str, Any] | None = None) -> dict[str, Any]:
         filename = self._adata_store.filename
         if filename is None:
-            filename = tempfile.mktemp(suffix=".h5ad")
-            self.param.warning(
-                "AnnDataSource was created from an in-memory AnnData object. "
-                "Saving to a temporary file for serialization. "
-                "Consider using backed='r+' to avoid this."
-            )
-            self._adata_store.write_h5ad(filename)
-            self._adata_store = ad.read_h5ad(filename)
+            with tempfile.NamedTemporaryFile(suffix=".h5ad", delete=False) as tmp:
+                filename = tmp.name
+                self.param.warning(
+                    "AnnDataSource was created from an in-memory AnnData object. "
+                    "Saving to a temporary file for serialization. "
+                    "Consider using backed='r+' to avoid this."
+                )
+                self._adata_store.write_h5ad(filename)
+                self._adata_store = ad.read_h5ad(filename)
 
             # Mark as temporary file and ensure global cleanup is registered
             self._opened[str(filename)] = (self._adata_store, True)

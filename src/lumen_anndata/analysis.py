@@ -8,6 +8,9 @@ from .views import ManifoldMapPanel, UMAPPanel
 
 
 class ManifoldMapAnalysis(Analysis):
+    """
+    Visualizes any UMAP, PCA, tSNE results unless otherwise specified by the user.
+    """
     def __call__(self, pipeline):
         return ManifoldMapPanel(pipeline=pipeline)
 
@@ -69,6 +72,9 @@ class UMAPAnalysis(Analysis):
 
 
 class LeidenUMAPAnalysis(UMAPAnalysis):
+    """
+    Applies Leiden clustering to the UMAP embedding of the data.
+    """
 
     category = param.Selector(default="leiden", objects=["leiden"])
 
@@ -83,6 +89,9 @@ class LeidenUMAPAnalysis(UMAPAnalysis):
         )
 
 class ComputeEmbeddingAnalysis(UMAPAnalysis):
+    """
+    Applies a generic embedding computation operation to the data.
+    """
 
     def __call__(self, pipeline):
         return UMAPPanel(
