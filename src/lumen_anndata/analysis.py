@@ -2,14 +2,13 @@ import param
 
 from lumen.ai.analysis import Analysis
 
-from lumen_anndata.operations import ComputeEmbedding, Leiden
-
 from .views import ManifoldMapPanel, UMAPPanel
 
 
 class ManifoldMapAnalysis(Analysis):
     """
-    Visualizes any UMAP, PCA, tSNE results unless otherwise specified by the user.
+    Use this to visualize any requests for UMAP, PCA, tSNE results,
+    unless explicitly otherwise specified by the user.
     """
     def __call__(self, pipeline):
         return ManifoldMapPanel(pipeline=pipeline)
@@ -84,7 +83,7 @@ class LeidenUMAPAnalysis(UMAPAnalysis):
         return UMAPPanel(
             pipeline=pipeline,
             category=self.category,
-            operation=Leiden,
+            operation="Leiden",
             operation_kwargs={"resolution": self.resolution},
         )
 
@@ -96,7 +95,7 @@ class ComputeEmbeddingAnalysis(UMAPAnalysis):
     def __call__(self, pipeline):
         return UMAPPanel(
             pipeline=pipeline,
-            operation=ComputeEmbedding,
+            operation="ComputeEmbedding",
         )
 
 
