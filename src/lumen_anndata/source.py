@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import os
-import pathlib
 import tempfile
 
 from copy import deepcopy
+from pathlib import Path
 from typing import (
     Any, Literal, Union, cast,
 )
@@ -45,7 +44,7 @@ class AnnDataSource(DuckDBSource):
     """
 
     adata = param.ClassSelector(
-        class_=(AnnData, str, pathlib.Path),
+        class_=(AnnData, str, Path),
         doc="An AnnData instance or path to a .h5ad file to load.",
     )
 
@@ -59,25 +58,6 @@ class AnnDataSource(DuckDBSource):
 
     _opened = {}  # Track files: {filename: (adata_object, is_temporary)}
 
-    @classmethod
-    def _register_global_cleanup(cls):
-        """Register global cleanup callback for all temporary files."""
-        def cleanup_temp_files(session_context):
-            """Clean up all temporary files when session is destroyed."""
-            temp_files_to_remove = [f for f, (_, is_temp) in cls._opened.items() if is_temp]
-
-            for filename in temp_files_to_remove:
-                if os.path.exists(filename):
-                    try:
-                        os.remove(filename)
-                        # Remove from cache
-                        cls._opened.pop(filename, None)
-                    except Exception as e:
-                        # Log warning but don't raise - cleanup failures shouldn't crash
-                        print(f"Warning: Failed to clean up temporary file {filename}: {e}")  # noqa: T201
-
-        pn.state.on_session_destroyed(cleanup_temp_files)
-
     def __init__(self, **params: Any):
         """Initialize AnnDataSource from an AnnData object or file path."""
         connection = params.pop('_connection', None)
@@ -90,23 +70,7 @@ class AnnDataSource(DuckDBSource):
         self._materialized_tables = params.pop('_materialized_tables', [])
         self._obs_ids_selected = params.pop('_obs_ids_selected', None)
         self._var_ids_selected = params.pop('_var_ids_selected', None)
-        if isinstance(adata, (str, pathlib.Path)):
-            if str(adata) in self._opened:
-                self._adata_store = self._opened[str(adata)][0]  # Get adata object from tuple
-            else:
-                self._adata_store = ad.read_h5ad(adata)
-                # Track as non-temporary file
-                self._opened[str(adata)] = (self._adata_store, False)
-        elif isinstance(adata, AnnData):
-            if adata.filename and str(adata.filename) in self._opened:
-                self._adata_store = self._opened[str(adata.filename)][0]  # Get adata object from tuple
-            else:
-                self._adata_store = adata
-                # Track as non-temporary if it has a filename
-                if adata.filename:
-                    self._opened[str(adata.filename)] = (self._adata_store, False)
-        else:
-            raise ValueError("Invalid 'adata' parameter: must be AnnData instance or path to .h5ad file.")
+        self._prepare_adata(adata)
 
         initial_mirrors = {}
         if self._adata_store:
@@ -140,6 +104,56 @@ class AnnDataSource(DuckDBSource):
         self.tables.update({
             table: table for table in self._component_registry.keys()
         })
+        pn.state.on_session_destroyed(self._cleanup_temp_files)
+
+    def _prepare_adata(self, adata):
+        """Prepare AnnData object from file path or AnnData instance."""
+        if isinstance(adata, (str, Path)):
+            adata_path = str(adata)
+            adata_obj = None  # Will be loaded from file
+            is_temp = False
+        elif isinstance(adata, AnnData):
+            adata_obj = adata
+            adata_path = adata.filename or self._create_temp_file(adata)
+            is_temp = adata.filename is None
+        else:
+            raise ValueError("Invalid 'adata' parameter: must be AnnData instance or path to .h5ad file.")
+
+        if adata_path in self._opened:
+            self._adata_store = self._opened[adata_path][0]
+        else:
+            self._adata_store = adata_obj or ad.read_h5ad(adata_path)
+            self._opened[adata_path] = (self._adata_store, is_temp)
+        self._adata_store._lumen_filename = adata_path
+
+    def _create_temp_file(self, adata: AnnData) -> str:
+        """Create a temporary file for AnnData if no filename is set."""
+        if hasattr(adata, '_lumen_filename'):
+            return adata._lumen_filename
+
+        with tempfile.NamedTemporaryFile(
+            suffix=".h5ad", delete=False, mode="wb"
+        ) as temp_file:
+            filename = temp_file.name
+            adata.write_h5ad(filename)
+            adata._lumen_filename = filename
+
+        self.param.warning(
+            "AnnDataSource was created from an in-memory AnnData object. "
+            f"Saved to a temporary file {filename} for serialization. "
+            "Consider using backed='r' to avoid this."
+        )
+        return filename
+
+    @classmethod
+    def _cleanup_temp_files(cls, session_context):
+        """Clean up all temporary files when session is destroyed."""
+        for filename, (_, is_temp) in cls._opened.items():
+            if not is_temp:
+                cls._opened.pop(filename, None)
+                continue
+            Path(filename).unlink(missing_ok=True)
+            cls._opened.pop(filename, None)
 
     @staticmethod
     def _get_adata_slice_labels(
@@ -632,22 +646,7 @@ class AnnDataSource(DuckDBSource):
         return source
 
     def to_spec(self, context: dict[str, Any] | None = None) -> dict[str, Any]:
-        filename = self._adata_store.filename
-        if filename is None:
-            with tempfile.NamedTemporaryFile(suffix=".h5ad", delete=False) as tmp:
-                filename = tmp.name
-                self.param.warning(
-                    "AnnDataSource was created from an in-memory AnnData object. "
-                    "Saving to a temporary file for serialization. "
-                    "Consider using backed='r+' to avoid this."
-                )
-                self._adata_store.write_h5ad(filename)
-                self._adata_store = ad.read_h5ad(filename)
-
-            # Mark as temporary file and ensure global cleanup is registered
-            self._opened[str(filename)] = (self._adata_store, True)
-            self._register_global_cleanup()
-
+        filename = self._adata_store._lumen_filename
         spec = super().to_spec(context)
         spec["adata"] = filename
 

@@ -35,7 +35,7 @@ class UMAPPanel(View):
 
     operation = param.Selector(
         default=None,
-        objects=[ComputeEmbedding, Leiden],
+        objects=["ComputeEmbedding", "Leiden"],
         doc="Operation to apply for UMAP embedding.",
     )
 
@@ -50,7 +50,8 @@ class UMAPPanel(View):
         hv.Store.set_current_backend('bokeh')
         adata = self.pipeline.source.get(self.pipeline.table, return_type="anndata")
         if self.operation:
-            adata = self.operation(**self.operation_kwargs).apply(adata)
+            operation_callable = ComputeEmbedding if self.operation == "ComputeEmbedding" else Leiden
+            adata = operation_callable(**self.operation_kwargs).apply(adata)
         data = tuple(adata.obsm["X_umap"].T)
         vdims = []
         agg = "count"
