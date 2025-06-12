@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-import pathlib
+import tempfile
 
+from copy import deepcopy
+from pathlib import Path
 from typing import (
     Any, Literal, Union, cast,
 )
@@ -11,6 +13,7 @@ from typing import (
 import anndata as ad
 import numpy as np
 import pandas as pd
+import panel as pn
 import param
 
 from anndata import AnnData
@@ -19,6 +22,7 @@ from lumen.serializers import Serializer
 from lumen.sources.base import cached
 from lumen.sources.duckdb import DuckDBSource
 from lumen.transforms import SQLFilter
+from lumen.util import resolve_module_reference
 from sqlglot import parse_one
 from sqlglot.expressions import Table
 
@@ -40,15 +44,19 @@ class AnnDataSource(DuckDBSource):
     """
 
     adata = param.ClassSelector(
-        class_=(AnnData, str, pathlib.Path),
+        class_=(AnnData, str, Path),
         doc="An AnnData instance or path to a .h5ad file to load.",
     )
 
-    ephemeral = param.Boolean(default=True, doc="Always ephemeral (in-memory) by virtue of AnnDataSource.")
-
     filter_in_sql = param.Boolean(default=True, doc="Whether to apply filters in SQL or in-memory.")
 
+    operations = param.HookList(default=[], doc="""
+        Operations to apply to the AnnData object
+        ONLY when getting data with return_type='anndata'.""")
+
     source_type = "anndata"
+
+    _opened = {}  # Track files: {filename: (adata_object, is_temporary)}
 
     def __init__(self, **params: Any):
         """Initialize AnnDataSource from an AnnData object or file path."""
@@ -62,12 +70,7 @@ class AnnDataSource(DuckDBSource):
         self._materialized_tables = params.pop('_materialized_tables', [])
         self._obs_ids_selected = params.pop('_obs_ids_selected', None)
         self._var_ids_selected = params.pop('_var_ids_selected', None)
-        if isinstance(adata, (str, pathlib.Path)):
-            self._adata_store = ad.read_h5ad(adata)
-        elif isinstance(adata, AnnData):
-            self._adata_store = adata.copy()
-        else:
-            raise ValueError("Invalid 'adata' parameter: must be AnnData instance or path to .h5ad file.")
+        self._prepare_adata(adata)
 
         initial_mirrors = {}
         if self._adata_store:
@@ -101,6 +104,58 @@ class AnnDataSource(DuckDBSource):
         self.tables.update({
             table: table for table in self._component_registry.keys()
         })
+        pn.state.on_session_destroyed(self._cleanup_temp_files)
+
+    def _prepare_adata(self, adata):
+        """Prepare AnnData object from file path or AnnData instance."""
+        if isinstance(adata, (str, Path)):
+            adata_path = str(adata)
+            adata_obj = None  # Will be loaded from file
+            is_temp = False
+        elif isinstance(adata, AnnData):
+            adata_obj = adata
+            adata_path = adata.filename or self._create_temp_file(adata)
+            is_temp = adata.filename is None
+        else:
+            raise ValueError("Invalid 'adata' parameter: must be AnnData instance or path to .h5ad file.")
+
+        if adata_path in self._opened:
+            self._adata_store = self._opened[adata_path][0]
+        else:
+            self._adata_store = adata_obj or ad.read_h5ad(adata_path)
+            self._opened[adata_path] = (self._adata_store, is_temp)
+        self._adata_store._lumen_filename = adata_path
+
+    def _create_temp_file(self, adata: AnnData) -> str:
+        """Create a temporary file for AnnData if no filename is set."""
+        if hasattr(adata, '_lumen_filename'):
+            return adata._lumen_filename
+
+        with tempfile.NamedTemporaryFile(
+            suffix=".h5ad", delete=False, mode="wb"
+        ) as temp_file:
+            filename = temp_file.name
+            adata.write_h5ad(filename)
+            adata._lumen_filename = filename
+
+        self.param.warning(
+            "AnnDataSource was created from an in-memory AnnData object. "
+            f"Saved to a temporary file {filename} for serialization. "
+            "Consider using backed='r' to avoid this."
+        )
+        return filename
+
+    @classmethod
+    def _cleanup_temp_files(cls, session_context):
+        """Clean up all temporary files when session is destroyed."""
+        # Create a list of items to avoid modifying dictionary during iteration
+        items_to_process = list(cls._opened.items())
+        for filename, (_, is_temp) in items_to_process:
+            if not is_temp:
+                cls._opened.pop(filename, None)
+                continue
+            Path(filename).unlink(missing_ok=True)
+            cls._opened.pop(filename, None)
 
     @staticmethod
     def _get_adata_slice_labels(
@@ -359,6 +414,24 @@ class AnnDataSource(DuckDBSource):
         else:
             self._var_ids_selected = None
 
+    def _apply_operations(self, adata: AnnData) -> None:
+        """Ensure all tables required by operations are materialized."""
+        if not self.operations:
+            return
+
+        required_tables = []
+        for operation in self.operations:
+            required_tables.extend(operation.requires)
+
+        # Materialize required tables that aren't already materialized
+        for table in required_tables:
+            if table and table in self._component_registry:
+                self._ensure_table_materialized(table)
+
+        for operation in self.operations:
+            adata = operation.apply(adata)
+        return adata
+
     def _get_as_anndata(self, query: dict[str, Any], table: str | None = None) -> AnnData:
         """Return a filtered AnnData object based on current selections and query.
 
@@ -392,7 +465,12 @@ class AnnDataSource(DuckDBSource):
         var_slice_labels = self._get_adata_slice_labels(self._adata_store.var_names, var_ids)
 
         final_obs_labels, final_var_labels = self._prepare_anndata_slice_from_query(obs_slice_labels, var_slice_labels, query)
-        return self._adata_store[final_obs_labels, final_var_labels]
+        adata = self._adata_store[final_obs_labels, final_var_labels]
+
+        if self.operations:
+            self._apply_operations(adata)
+
+        return adata
 
     def _get_as_dataframe(self, table: str, query: dict[str, Any], sql_transforms: list) -> pd.DataFrame:
         """Get table data as DataFrame, materializing if necessary."""
@@ -438,7 +516,6 @@ class AnnDataSource(DuckDBSource):
         for key, value in query.items():
             if self._has_column_in_sql_table(table, key) or table not in self._component_registry:
                 conditions.append((key, value))
-
         return conditions
 
     def _serialize_tables(self) -> dict[str, Any]:
@@ -482,13 +559,8 @@ class AnnDataSource(DuckDBSource):
 
     def get_tables(self, materialized_only: bool = False) -> list[str]:
         """Get list of available tables."""
-        all_tables = {
-            t[0] for t in self._connection.execute('SHOW TABLES').fetchall()
-            if not self._is_table_excluded(t[0])
-        }
+        all_tables = set({table for table in self.tables if not self._is_table_excluded(table)})
         if materialized_only:
-            # TODO: figure out why SHOW TABLES on create_source_sql_expr results in all tables
-            # even if not materialized...
             all_tables -= set(self._component_registry.keys()) - set(self._materialized_tables)
         else:
             all_tables |= set(self._component_registry)
@@ -576,5 +648,72 @@ class AnnDataSource(DuckDBSource):
         return source
 
     def to_spec(self, context: dict[str, Any] | None = None) -> dict[str, Any]:
-        # TODO: temporarily disable this until Lumen internal supports unserializable objects
-        return {}
+        filename = self._adata_store._lumen_filename
+        spec = super().to_spec(context)
+        spec["adata"] = filename
+
+        # Handle operations serialization
+        operations = spec.pop("operations", None)
+        if not operations:
+            return spec
+
+        spec["operations"] = []
+        for operation in operations:
+            op_spec = {"type": f"{operation.__module__}.{type(operation).__name__}"}
+            for k, v in operation.param.values().items():
+                # Get the default value from the operation's class parameter
+                param_obj = getattr(type(operation).param, k, None)
+                if param_obj is None:
+                    continue
+                default = param_obj.default
+                try:
+                    is_equal = default is v
+                    if not is_equal:
+                        is_equal = default == v
+                except Exception:
+                    is_equal = False
+                if k == 'name' or is_equal:
+                    continue
+                else:
+                    op_spec[k] = v
+            spec['operations'].append(op_spec)
+        return spec
+
+    @classmethod
+    def from_spec(cls, spec: dict[str, Any] | str) -> "AnnDataSource":
+        """Create AnnDataSource from specification.
+
+        Parameters
+        ----------
+        spec : dict or str
+            Source specification
+
+        Returns
+        -------
+        AnnDataSource
+            Instantiated source
+        """
+        if isinstance(spec, str):
+            # If spec is a string, assume it's a file path
+            return cls(adata=spec)
+
+        spec = deepcopy(spec)
+
+        # Handle operations deserialization
+        operation_specs = spec.pop("operations", [])
+        if operation_specs:
+            operations = []
+            for op in operation_specs:
+                if isinstance(op, dict):
+                    # Need to instantiate from spec
+                    op_spec = deepcopy(op)
+                    op_type = op_spec.pop('type')
+                    op_class = resolve_module_reference(op_type)
+                    operations.append(op_class(**op_spec))
+                else:
+                    # Already instantiated
+                    operations.append(op)
+            spec["operations"] = operations
+
+        # Use parent class from_spec for everything else
+        return super().from_spec(spec)
