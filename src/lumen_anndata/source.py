@@ -148,7 +148,9 @@ class AnnDataSource(DuckDBSource):
     @classmethod
     def _cleanup_temp_files(cls, session_context):
         """Clean up all temporary files when session is destroyed."""
-        for filename, (_, is_temp) in cls._opened.items():
+        # Create a list of items to avoid modifying dictionary during iteration
+        items_to_process = list(cls._opened.items())
+        for filename, (_, is_temp) in items_to_process:
             if not is_temp:
                 cls._opened.pop(filename, None)
                 continue
