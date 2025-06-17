@@ -54,6 +54,13 @@ class AnnDataSource(DuckDBSource):
         Operations to apply to the AnnData object
         ONLY when getting data with return_type='anndata'.""")
 
+    uploaded_filename = param.String(
+        default=None, doc="""
+        If provided, will persist the uploaded AnnData file to this filename after the session ends,
+        saved under the `.lumen_anndata_cache` directory,  or in `/tmp` if there is a PermissionError.
+        """
+    )
+
     source_type = "anndata"
 
     _opened = {}  # Track files: {filename: (adata_object, is_temporary)}
@@ -104,7 +111,8 @@ class AnnDataSource(DuckDBSource):
         self.tables.update({
             table: table for table in self._component_registry.keys()
         })
-        pn.state.on_session_destroyed(self._cleanup_temp_files)
+        if not self.uploaded_filename:
+            pn.state.on_session_destroyed(self._cleanup_temp_files)
 
     def _prepare_adata(self, adata):
         """Prepare AnnData object from file path or AnnData instance."""
@@ -131,18 +139,27 @@ class AnnDataSource(DuckDBSource):
         if hasattr(adata, '_lumen_filename'):
             return adata._lumen_filename
 
-        with tempfile.NamedTemporaryFile(
-            suffix=".h5ad", delete=False, mode="wb"
-        ) as temp_file:
-            filename = temp_file.name
-            adata.write_h5ad(filename)
-            adata._lumen_filename = filename
+        try:
+            cache_dir = Path("lumen_anndata_cache")
+            cache_dir.mkdir(exist_ok=True)
+        except PermissionError:
+            cache_dir = None
 
-        self.param.warning(
-            "AnnDataSource was created from an in-memory AnnData object. "
-            f"Saved to a temporary file {filename} for serialization. "
-            "Consider using backed='r' to avoid this."
-        )
+        with tempfile.NamedTemporaryFile(
+            dir=cache_dir, suffix=".h5ad", delete=False, mode="wb"
+        ) as temp_file:
+            if self.uploaded_filename:
+                filename = str(Path(temp_file.name).parent / self.uploaded_filename)
+            else:
+                filename = temp_file.name
+            if not Path(filename).exists():
+                adata.write_h5ad(filename)
+                self.param.warning(
+                    "AnnDataSource was created from an in-memory AnnData object. "
+                    f"Saved to a temporary file {filename} for serialization. "
+                    "Consider using backed='r' to avoid this."
+                )
+            adata._lumen_filename = filename
         return filename
 
     @classmethod

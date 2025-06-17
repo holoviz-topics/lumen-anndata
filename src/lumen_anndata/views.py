@@ -16,20 +16,14 @@ class ManifoldMapPanel(View):
     view_type = "manifold_map"
 
     def get_panel(self):
-        hv.Store.set_current_backend('bokeh')
+        hv.Store.set_current_backend("bokeh")
         return ManifoldMap(adata=self.pipeline.source.get(self.pipeline.table, return_type="anndata"))
 
 
 class UMAPPanel(View):
-    category = param.Selector(
-        default=None,
-        objects=[
-            "leiden",
-            "cell_type",
-            "tissue",
-            "development_stage",
-            "observation_joinid",
-        ],
+
+    category = param.String(
+        default="cell_type",
         doc="Category to color points by in UMAP embedding.",
     )
 
@@ -47,7 +41,7 @@ class UMAPPanel(View):
     view_type = "umap"
 
     def get_panel(self):
-        hv.Store.set_current_backend('bokeh')
+        hv.Store.set_current_backend("bokeh")
         adata = self.pipeline.source.get(self.pipeline.table, return_type="anndata")
         if self.operation:
             operation_callable = ComputeEmbedding if self.operation == "ComputeEmbedding" else Leiden

@@ -4,7 +4,7 @@ import lumen.ai as lmai
 import panel as pn
 
 from lumen_anndata.analysis import (
-    ComputeEmbeddingAnalysis, LeidenUMAPAnalysis, ManifoldMapAnalysis,
+    ComputeEmbeddingAnalysis, ManifoldMapAnalysis,
 )
 from lumen_anndata.utils import upload_h5ad
 
@@ -39,7 +39,7 @@ ui = lmai.ExplorerUI(
     table_upload_callbacks={
         ".h5ad": upload_h5ad,
     },
-    analyses=[ManifoldMapAnalysis, LeidenUMAPAnalysis, ComputeEmbeddingAnalysis],
+    analyses=[ManifoldMapAnalysis, ComputeEmbeddingAnalysis],
     log_level="DEBUG",
 )
 ui.servable()

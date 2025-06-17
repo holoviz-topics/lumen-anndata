@@ -144,6 +144,13 @@ class ComputeEmbedding(AnnDataOperation):
         Random state for reproducibility.""",
     )
 
+    resolution = param.Number(
+        default=1.0,
+        bounds=(0, None),
+        doc="""
+        Resolution parameter for Leiden clustering. Higher values lead to more clusters.""",
+    )
+
     def apply(self, adata: AnnData) -> AnnData:
         """Compute standard embedding pipeline."""
         # Run PCA if not present
@@ -152,6 +159,10 @@ class ComputeEmbedding(AnnDataOperation):
 
         # Compute neighbors
         sc.pp.neighbors(adata, n_neighbors=self.n_neighbors, n_pcs=self.n_pcs, random_state=self.random_state)
+
+        # Compute Leiden clustering if not present
+        if "leiden" not in adata.obs:
+            sc.tl.leiden(adata, resolution=self.resolution, random_state=self.random_state, copy=False)
 
         # Compute UMAP
         sc.tl.umap(adata, min_dist=self.min_dist, random_state=self.random_state)
