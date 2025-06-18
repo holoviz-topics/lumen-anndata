@@ -67,7 +67,7 @@ class LeidenComputation(AnnDataAnalysis):
     )
 
     key_added = param.String(
-        default="leiden",
+        default="leiden_{resolution}",
         doc="""
         Key under which to store the clustering in adata.obs.""",
     )
@@ -87,12 +87,15 @@ class LeidenComputation(AnnDataAnalysis):
             resolution=self.resolution,
             n_iterations=self.n_iterations,
             random_state=self.random_state,
-            key_added=self.key_added,
+            key_added=self.key_added.format(resolution=self.resolution),
             copy=False,
             flavor="igraph",
         )
 
-        pipeline.source._adata_store = adata
+        pipeline.source = source.create_sql_expr_source(
+            tables=source.tables,
+            adata=adata,
+        )
         return pipeline
 
     @classmethod
