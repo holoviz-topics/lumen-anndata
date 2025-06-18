@@ -45,7 +45,11 @@ class AnnDataSource(DuckDBSource):
 
     adata = param.ClassSelector(
         class_=(AnnData, str, Path),
-        doc="An AnnData instance or path to a .h5ad file to load.",
+        doc="""
+        AnnData object or path to a .h5ad file. This parameter is used only to initialize the source.
+        To retrieve the up-to-date data, use the `get` method, which returns a DataFrame or
+        filtered AnnData object depending on the `return_type` argument.
+        """,
     )
 
     filter_in_sql = param.Boolean(default=True, doc="Whether to apply filters in SQL or in-memory.")

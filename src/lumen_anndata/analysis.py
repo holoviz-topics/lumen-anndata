@@ -32,14 +32,6 @@ class ManifoldMapVisualization(AnnDataAnalysis):
     def __call__(self, pipeline):
         return ManifoldMapPanel(pipeline=pipeline)
 
-    @classmethod
-    async def applies(cls, pipeline) -> bool:
-        source = pipeline.source
-        if not isinstance(source, AnnDataSource):
-            return False
-        adata = source.get(pipeline.table, return_type="anndata")
-        return adata is not None and len(adata.obsm) > 0
-
 
 class LeidenComputation(AnnDataAnalysis):
     """Perform Leiden clustering."""
@@ -92,16 +84,9 @@ class LeidenComputation(AnnDataAnalysis):
             flavor="igraph",
         )
 
+        # Create new source with updated adata
         pipeline.source = source.create_sql_expr_source(
             tables=source.tables,
             adata=adata,
         )
         return pipeline
-
-    @classmethod
-    async def applies(cls, pipeline) -> bool:
-        source = pipeline.source
-        if not isinstance(source, AnnDataSource) or source._obs_ids_selected is None:
-            return False
-        adata = source.get(pipeline.table, return_type="anndata")
-        return adata is not None and len(adata.obsm) > 0
