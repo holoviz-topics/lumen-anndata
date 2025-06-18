@@ -594,7 +594,7 @@ class AnnDataSource(DuckDBSource):
         return super().execute(sql_query, *args, **kwargs)
 
     def create_sql_expr_source(
-        self, tables: dict[str, str], materialize: bool = True, **kwargs
+        self, tables: dict[str, str], materialize: bool = True, adata: AnnData | None = None, **kwargs
     ):
         """
         Creates a new SQL Source given a set of table names and
@@ -606,6 +606,8 @@ class AnnDataSource(DuckDBSource):
             Mapping from table name to SQL expression.
         materialize: bool
             Whether to materialize new tables
+        adata: AnnData | None
+            AnnData object to use for the new source, if any.
         kwargs: any
             Additional keyword arguments.
 
@@ -628,8 +630,13 @@ class AnnDataSource(DuckDBSource):
         if 'uri' not in kwargs and 'initializers' not in kwargs:
             params['_connection'] = self._connection
 
+        sql_expr_tables = {
+            table: sql_expr for table, sql_expr in tables.items()
+            if table not in self._component_registry
+        }
+
         # Create the new source using parent's method
-        source = super().create_sql_expr_source(tables.copy(), materialize, **params)
+        source = super().create_sql_expr_source(sql_expr_tables.copy(), materialize, **params)
 
         # Update the new source's tables with SQL expressions from all registered components
         source.tables.update({
@@ -660,7 +667,7 @@ class AnnDataSource(DuckDBSource):
         source._set_ids_from_series_or_array(obs_ids, var_ids)
 
         # Ensure the new source has access to the AnnData store
-        source._adata_store = self._adata_store
+        source._adata_store = adata or self._adata_store
 
         return source
 
