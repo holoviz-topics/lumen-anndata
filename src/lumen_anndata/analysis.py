@@ -1,12 +1,29 @@
 import param
+import scanpy as sc
 
 from lumen.ai.analysis import Analysis
 
 from .source import AnnDataSource
-from .views import ManifoldMapPanel, UMAPPanel
+from .views import ManifoldMapPanel
 
 
-class ManifoldMapAnalysis(Analysis):
+class AnnDataAnalysis(Analysis):
+    """
+    Base class for analyses that operate on AnnData objects.
+    This class is used to ensure that the analysis can be applied
+    to an AnnDataSource.
+    """
+
+    @classmethod
+    async def applies(cls, pipeline) -> bool:
+        source = pipeline.source
+        if not isinstance(source, AnnDataSource):
+            return False
+        adata = source.get(pipeline.table, return_type="anndata")
+        return adata is not None and len(adata.obsm) > 0
+
+
+class ManifoldMapVisualization(AnnDataAnalysis):
     """
     Use this to visualize any requests for UMAP, PCA, tSNE results,
     unless explicitly otherwise specified by the user.
@@ -24,8 +41,36 @@ class ManifoldMapAnalysis(Analysis):
         return adata is not None and len(adata.obsm) > 0
 
 
-class ComputeEmbeddingAnalysis(Analysis):
-    category = param.Selector(default=None, doc="Category to color points by in UMAP embedding.")
+class LeidenComputation(AnnDataAnalysis):
+    """Perform Leiden clustering."""
+
+    category = param.Selector(default=None, objects=[], doc="Category for the analysis.")
+
+    random_state = param.Integer(
+        default=0,
+        allow_None=True,
+        doc="""
+        Random state for reproducibility.""",
+    )
+
+    resolution = param.Number(
+        default=1.0,
+        bounds=(0, None),
+        doc="""
+        Resolution parameter for clustering. Higher values lead to more clusters.""",
+    )
+
+    n_iterations = param.Integer(
+        default=-1,
+        doc="""
+        Number of iterations for the Leiden algorithm. -1 means iterate until convergence.""",
+    )
+
+    key_added = param.String(
+        default="leiden",
+        doc="""
+        Key under which to store the clustering in adata.obs.""",
+    )
 
     def __call__(self, pipeline):
         source = pipeline.source
@@ -33,7 +78,22 @@ class ComputeEmbeddingAnalysis(Analysis):
         available_cols = list(adata.obs.columns)
         self.param.category.objects = available_cols
         self.category = available_cols[0]
-        return UMAPPanel(pipeline=pipeline, category=self.category, operation="ComputeEmbedding")
+
+        if "neighbors" not in adata.uns:
+            sc.pp.neighbors(adata, random_state=self.random_state, copy=False)
+
+        sc.tl.leiden(
+            adata,
+            resolution=self.resolution,
+            n_iterations=self.n_iterations,
+            random_state=self.random_state,
+            key_added=self.key_added,
+            copy=False,
+            flavor="igraph",
+        )
+
+        pipeline.source._adata_store = adata
+        return pipeline
 
     @classmethod
     async def applies(cls, pipeline) -> bool:

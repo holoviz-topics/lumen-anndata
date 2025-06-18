@@ -1,15 +1,7 @@
-import colorcet as cc
-import datashader as ds
 import holoviews as hv
-import holoviews.plotting.bokeh  # noqa: F401
-import panel as pn
-import param
 
-from holoviews.operation.datashader import datashade, spread
 from hv_anndata import ManifoldMap
 from lumen.views import View
-
-from .operations import ComputeEmbedding, Leiden, labeller
 
 
 class ManifoldMapPanel(View):
@@ -18,47 +10,3 @@ class ManifoldMapPanel(View):
     def get_panel(self):
         hv.Store.set_current_backend("bokeh")
         return ManifoldMap(adata=self.pipeline.source.get(self.pipeline.table, return_type="anndata"))
-
-
-class UMAPPanel(View):
-
-    category = param.String(
-        default="cell_type",
-        doc="Category to color points by in UMAP embedding.",
-    )
-
-    operation = param.Selector(
-        default=None,
-        objects=["ComputeEmbedding", "Leiden"],
-        doc="Operation to apply for UMAP embedding.",
-    )
-
-    operation_kwargs = param.Dict(
-        default={},
-        doc="Keyword arguments to pass to the selected operation.",
-    )
-
-    view_type = "umap"
-
-    def get_panel(self):
-        hv.Store.set_current_backend("bokeh")
-        adata = self.pipeline.source.get(self.pipeline.table, return_type="anndata")
-        if self.operation:
-            operation_callable = ComputeEmbedding if self.operation == "ComputeEmbedding" else Leiden
-            adata = operation_callable(**self.operation_kwargs).apply(adata)
-        data = tuple(adata.obsm["X_umap"].T)
-        vdims = []
-        agg = "count"
-        color_key = "glasbey"
-        if self.category:
-            data += (adata.obs[self.category].values,)
-            vdims = [self.category]
-            agg = ds.count_cat(self.category)
-            color_key = cc.glasbey_dark[: len(adata.obs[self.category].unique())]
-        points = hv.Points(data, vdims=vdims)
-        shaded = spread(datashade(points, aggregator=agg, color_key=color_key), px=4).opts(
-            responsive=True, height=600, xaxis=None, yaxis=None, show_legend=True, show_grid=True
-        )
-        if self.category:
-            return pn.panel(shaded * labeller(points).opts(text_color="black"))
-        return pn.panel(shaded)

@@ -77,6 +77,7 @@ class AnnDataSource(DuckDBSource):
         self._materialized_tables = params.pop('_materialized_tables', [])
         self._obs_ids_selected = params.pop('_obs_ids_selected', None)
         self._var_ids_selected = params.pop('_var_ids_selected', None)
+        self._lumen_filename = None
         self._prepare_adata(adata)
 
         initial_mirrors = {}
@@ -132,12 +133,12 @@ class AnnDataSource(DuckDBSource):
         else:
             self._adata_store = adata_obj or ad.read_h5ad(adata_path)
             self._opened[adata_path] = (self._adata_store, is_temp)
-        self._adata_store._lumen_filename = adata_path
+        self._lumen_filename = adata_path
 
     def _create_temp_file(self, adata: AnnData) -> str:
         """Create a temporary file for AnnData if no filename is set."""
-        if hasattr(adata, '_lumen_filename'):
-            return adata._lumen_filename
+        if self._lumen_filename:
+            return self._lumen_filename
 
         try:
             cache_dir = Path("lumen_anndata_cache")
@@ -159,7 +160,6 @@ class AnnDataSource(DuckDBSource):
                     f"Saved to a temporary file {filename} for serialization. "
                     "Consider using backed='r' to avoid this."
                 )
-            adata._lumen_filename = filename
         return filename
 
     @classmethod
@@ -665,7 +665,7 @@ class AnnDataSource(DuckDBSource):
         return source
 
     def to_spec(self, context: dict[str, Any] | None = None) -> dict[str, Any]:
-        filename = self._adata_store._lumen_filename
+        filename = self._lumen_filename
         spec = super().to_spec(context)
         spec["adata"] = filename
 
