@@ -712,6 +712,8 @@ class AnnDataSource(DuckDBSource):
             # Re-register obs and var tables with the new AnnData's data using utility method
             new_tables = source._prepare_obs_var_tables(adata)
             source._register_tables(new_tables)
+            is_temp = self._opened[source._lumen_filename][1]
+            self._opened[source._lumen_filename] = (adata, is_temp)
 
         return source
 
