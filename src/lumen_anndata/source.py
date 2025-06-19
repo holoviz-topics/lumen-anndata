@@ -90,15 +90,8 @@ class AnnDataSource(DuckDBSource):
             if not self._component_registry:
                 self._component_registry = self._build_component_registry_map()
 
-            # Prepare obs table
-            obs_df = self._adata_store.obs.copy()
-            obs_df["obs_id"] = obs_df.index.astype(str).values
-            initial_mirrors["obs"] = obs_df
-
-            # Prepare var table
-            var_df = self._adata_store.var.copy()
-            var_df["var_id"] = var_df.index.astype(str).values
-            initial_mirrors["var"] = var_df
+            # Prepare obs and var tables using utility method
+            initial_mirrors = self._prepare_obs_var_tables()
 
         params["mirrors"] = initial_mirrors
         if connection:
@@ -106,10 +99,7 @@ class AnnDataSource(DuckDBSource):
         super().__init__(**params)
 
         if self._adata_store and self.connection and initial_mirrors:
-            for table_name, df in initial_mirrors.items():
-                self.connection.register(table_name, df)
-                if table_name not in self._materialized_tables:
-                    self._materialized_tables.append(table_name)
+            self._register_tables(initial_mirrors)
 
         if self.tables is None:
             self.tables = {}
@@ -118,6 +108,46 @@ class AnnDataSource(DuckDBSource):
         })
         if not self.uploaded_filename:
             pn.state.on_session_destroyed(self._cleanup_temp_files)
+
+    def _prepare_obs_var_tables(self, adata: AnnData | None = None) -> dict[str, pd.DataFrame]:
+        """Prepare obs and var tables with ID columns for SQL registration.
+
+        Parameters
+        ----------
+        adata : AnnData, optional
+            AnnData object to use. If None, uses self._adata_store.
+
+        Returns
+        -------
+        dict[str, pd.DataFrame]
+            Dictionary with 'obs' and 'var' keys containing prepared DataFrames.
+        """
+        target_adata = adata or self._adata_store
+        if not target_adata:
+            return {}
+
+        # Prepare obs table
+        obs_df = target_adata.obs.copy()
+        obs_df["obs_id"] = obs_df.index.astype(str).values
+
+        # Prepare var table
+        var_df = target_adata.var.copy()
+        var_df["var_id"] = var_df.index.astype(str).values
+
+        return {"obs": obs_df, "var": var_df}
+
+    def _register_tables(self, tables: dict[str, pd.DataFrame]) -> None:
+        """Register tables with the DuckDB connection and update materialized tables list.
+
+        Parameters
+        ----------
+        tables : dict[str, pd.DataFrame]
+            Dictionary mapping table names to DataFrames to register.
+        """
+        for table_name, df in tables.items():
+            self.connection.register(table_name, df)
+            if table_name not in self._materialized_tables:
+                self._materialized_tables.append(table_name)
 
     def _prepare_adata(self, adata):
         """Prepare AnnData object from file path or AnnData instance."""
@@ -148,7 +178,7 @@ class AnnDataSource(DuckDBSource):
             return self._lumen_filename
 
         try:
-            cache_dir = Path("lumen_anndata_cache")
+            cache_dir = Path(".lumen_anndata_cache")
             cache_dir.mkdir(exist_ok=True)
         except PermissionError:
             cache_dir = None
@@ -304,12 +334,14 @@ class AnnDataSource(DuckDBSource):
         df = self._convert_component_to_sql_df(table_name)
         if df is not None:
             try:
-                self.connection.register(table_name, df)
+                self._register_tables({table_name: df})
             except Exception as e:
                 # Create empty table
                 self.connection.execute(f"CREATE TABLE {table_name} AS SELECT * FROM (SELECT 1 AS dummy) WHERE 0")
                 self.param.warning(f"Failed to register table '{table_name}' with DuckDB: {e}")
-            self._materialized_tables.append(table_name)
+                # Still mark as materialized even if it failed
+                if table_name not in self._materialized_tables:
+                    self._materialized_tables.append(table_name)
         else:
             # Let subsequent SQL query fail if the table is truly needed and couldn't be made.
             self.param.warning(f"Component '{table_name}' conversion to DataFrame failed; cannot materialize for SQL.")
@@ -633,8 +665,8 @@ class AnnDataSource(DuckDBSource):
         params['_obs_ids_selected'] = self._obs_ids_selected
         params['_var_ids_selected'] = self._var_ids_selected
 
-        # Reuse connection unless it has changed
-        if 'uri' not in kwargs and 'initializers' not in kwargs:
+        # Reuse connection unless it has changed OR we have a new AnnData object
+        if 'uri' not in kwargs and 'initializers' not in kwargs and adata is None:
             params['_connection'] = self._connection
 
         sql_expr_tables = {
@@ -677,6 +709,9 @@ class AnnDataSource(DuckDBSource):
         source._adata_store = adata or self._adata_store
         if adata is not None:
             source._component_registry = source._build_component_registry_map()
+            # Re-register obs and var tables with the new AnnData's data using utility method
+            new_tables = source._prepare_obs_var_tables(adata)
+            source._register_tables(new_tables)
 
         return source
 

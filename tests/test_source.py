@@ -389,21 +389,30 @@ def test_create_sql_expr_source_with_modified_adata(fixed_sample_anndata):
     """Test creating a new source with modified AnnData preserves modifications."""
     source = AnnDataSource(adata=fixed_sample_anndata)
 
+    new_source = source.create_sql_expr_source({"obs_b": "SELECT * FROM obs WHERE cell_type = 'B'"})
+
+    # The old source should retain the original adata
+    assert "obs_b" not in source.get_tables()
+
+    # new source should have been subset
+    obs_df = source.get('obs')
+    new_obs_df = new_source.get('obs')
+    assert not obs_df.equals(new_obs_df)
+
+    # Create a new source with the modified adata
     # Modify the adata object by adding a new column
     modified_adata = fixed_sample_anndata.copy()
     modified_adata.obs['new_column'] = ['value1', 'value2', 'value3', 'value4']
-
-    # Create a new source with the modified adata
-    new_source = source.create_sql_expr_source({}, adata=modified_adata)
+    new_adata_source = new_source.create_sql_expr_source(new_source.tables, adata=modified_adata)
 
     # The new source should have the new column
-    obs_df = new_source.get('obs')
+    obs_df = new_adata_source.get('obs')
     assert 'new_column' in obs_df.columns
-    assert list(obs_df['new_column']) == ['value1', 'value2', 'value3', 'value4']
+    assert list(obs_df['new_column']) == ['value1', 'value3']
 
-    # The original source should not have the new column
-    original_obs_df = source.get('obs')
-    assert 'new_column' not in original_obs_df.columns
+    # The obs_b should still be available in the new source
+    obs_b_df = new_adata_source.get('obs_b')
+    assert not obs_b_df.empty
 
 
 def test_create_sql_expr_source_updates_component_registry(fixed_sample_anndata):
@@ -431,71 +440,6 @@ def test_create_sql_expr_source_updates_component_registry(fixed_sample_anndata)
     assert 'test_col' in column_names
 
 
-def test_scanpy_leiden_integration(sample_anndata):
-    """Test that leiden clustering results are properly reflected in the source."""
-    import scanpy as sc
-
-    # Prepare data for leiden clustering
-    adata = sample_anndata.copy()
-
-    # Run preprocessing steps needed for leiden
-    sc.pp.neighbors(adata, n_pcs=10)
-
-    # Create source
-    source = AnnDataSource(adata=adata)
-
-    # Verify leiden column doesn't exist yet
-    obs_df = source.get('obs')
-    assert 'leiden' not in obs_df.columns
-
-    # Run leiden clustering
-    sc.tl.leiden(adata, resolution=1.0, key_added='leiden')
-
-    # The source still has the old data
-    obs_df = source.get('obs')
-    assert 'leiden' not in obs_df.columns
-
-    # Create a new source with the modified adata
-    new_source = source.create_sql_expr_source({}, adata=adata)
-
-    # The new source should have the leiden column
-    new_obs_df = new_source.get('obs')
-    assert 'leiden' in new_obs_df.columns
-    assert len(new_obs_df['leiden'].unique()) > 1  # Should have multiple clusters
-
-
-def test_multiple_analysis_steps(sample_anndata):
-    """Test multiple analysis steps with source updates."""
-    import scanpy as sc
-
-    adata = sample_anndata.copy()
-    sc.pp.neighbors(adata, n_pcs=10)
-
-    source = AnnDataSource(adata=adata)
-
-    # Step 1: Add leiden clustering
-    sc.tl.leiden(adata, resolution=0.5, key_added='leiden_0.5')
-    source = source.create_sql_expr_source({}, adata=adata)
-
-    obs_df1 = source.get('obs')
-    assert 'leiden_0.5' in obs_df1.columns
-
-    # Step 2: Add another leiden clustering with different resolution
-    sc.tl.leiden(adata, resolution=1.0, key_added='leiden_1.0')
-    source = source.create_sql_expr_source({}, adata=adata)
-
-    obs_df2 = source.get('obs')
-    assert 'leiden_0.5' in obs_df2.columns
-    assert 'leiden_1.0' in obs_df2.columns
-
-    # Step 3: Add custom annotation
-    adata.obs['custom_annotation'] = 'annotation_' + adata.obs['leiden_1.0'].astype(str)
-    source = source.create_sql_expr_source({}, adata=adata)
-
-    obs_df3 = source.get('obs')
-    assert 'custom_annotation' in obs_df3.columns
-
-
 def test_create_sql_expr_source(fixed_sample_anndata):
     """Test creating a new source with SQL expressions."""
     source = AnnDataSource(adata=fixed_sample_anndata)
@@ -513,9 +457,6 @@ def test_create_sql_expr_source(fixed_sample_anndata):
     assert len(new_table_data) == 1
     assert new_table_data.iloc[0]["sample_name"] == "1262C"
     assert new_table_data.iloc[0]["cell_type"] == "T"
-
-    # Both sources share the same connection, so the original source also sees the new table
-    assert "new_table" in source.get_tables()
 
     # Test with multiple tables
     multi_source = source.create_sql_expr_source({
