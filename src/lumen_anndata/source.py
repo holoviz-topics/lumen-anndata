@@ -135,7 +135,10 @@ class AnnDataSource(DuckDBSource):
         if adata_path in self._opened:
             self._adata_store = self._opened[adata_path][0]
         else:
-            self._adata_store = adata_obj or ad.read_h5ad(adata_path)
+            if isinstance(adata_obj, AnnData):
+                self._adata_store = adata_obj
+            else:
+                self._adata_store = ad.read_h5ad(adata_path)
             self._opened[adata_path] = (self._adata_store, is_temp)
         self._lumen_filename = adata_path
 
@@ -672,6 +675,8 @@ class AnnDataSource(DuckDBSource):
 
         # Ensure the new source has access to the AnnData store
         source._adata_store = adata or self._adata_store
+        if adata is not None:
+            source._component_registry = source._build_component_registry_map()
 
         return source
 
