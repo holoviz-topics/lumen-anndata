@@ -89,4 +89,8 @@ class LeidenComputation(AnnDataAnalysis):
             tables=source.tables,
             adata=adata,
         )
+        self.message = (
+            f"Leiden clustering completed with resolution {self.resolution} "
+            f"and stored in `adata.obs['{self.key_added.format(resolution=self.resolution)}']`."
+        )
         return pipeline
