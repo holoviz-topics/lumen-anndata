@@ -183,3 +183,5 @@ cython_debug/
 
 .DS_Store
 *.wal
+.pixi
+pixi.lock
