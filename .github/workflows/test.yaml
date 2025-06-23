@@ -85,7 +85,7 @@ jobs:
         run: |
           MATRIX=$(jq -nsc '{
               "os": ["ubuntu-latest", "macos-latest", "windows-latest"],
-              "environment": ["test-310", "test-312"]
+              "environment": ["test-311", "test-312"]
           }')
           echo "MATRIX=$MATRIX" >> $GITHUB_ENV
       - name: Set test matrix with 'full' option
@@ -93,7 +93,7 @@ jobs:
         run: |
           MATRIX=$(jq -nsc '{
               "os": ["ubuntu-latest", "macos-latest", "windows-latest"],
-              "environment": ["test-310", "test-311", "test-312"]
+              "environment": ["test-311", "test-312"]
           }')
           echo "MATRIX=$MATRIX" >> $GITHUB_ENV
       - name: Set test matrix with 'downstream' option
@@ -125,6 +125,10 @@ jobs:
       - uses: holoviz-dev/holoviz_tasks/pixi_install@v0
         with:
           environments: ${{ matrix.environment }}
+      - name: Install dependencies
+        run: |
+          pixi run -e ${{ matrix.environment }} install-git-deps
+          pixi run -e ${{ matrix.environment }} install
       - name: Test Unit
         run: |
           pixi run -e ${{ matrix.environment }} test-unit $COV
@@ -146,6 +150,10 @@ jobs:
       - uses: holoviz-dev/holoviz_tasks/pixi_install@v0
         with:
           environments: ${{ matrix.environment }}
+      - name: Install dependencies
+        run: |
+          pixi run -e ${{ matrix.environment }} install-git-deps
+          pixi run -e ${{ matrix.environment }} install
       - name: Test Unit
         run: |
           pixi run -e ${{ matrix.environment }} test-unit

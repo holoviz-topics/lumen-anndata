@@ -12,7 +12,6 @@ postinstall = 'pixi run install-git-deps'
 PYTHONIOENCODING = "utf-8"
 
 [environments]
-test-310 = ["py310", "test-core", "test"]
 test-311 = ["py311", "test-core", "test"]
 test-312 = ["py312", "test-core", "test"]
 test-core = ["py313", "test-core"]
@@ -38,9 +37,6 @@ scanpy = ">=1.11.1"
 # Note: Git dependencies will be installed via pip in the install task
 # lumen[ai] @ git+https://github.com/holoviz/lumen.git@main
 # hv-anndata @ git+https://github.com/holoviz-topics/hv-anndata.git@main
-
-[feature.py310.dependencies]
-python = "3.10.*"
 
 [feature.py311.dependencies]
 python = "3.11.*"
@@ -71,6 +67,7 @@ pytest-asyncio = "*"
 
 [feature.test-core.tasks]
 test-unit = 'pytest tests -n logical --dist loadgroup'
+test-unit-with-install = {depends-on = ["install-git-deps", "install", "test-unit"]}
 
 [feature.test.dependencies]
 matplotlib-base = ">=3.4"
