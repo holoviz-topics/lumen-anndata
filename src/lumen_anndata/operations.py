@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import holoviews as hv
 import param
+import scanpy as sc
 
 from holoviews.operation import Operation
 
@@ -52,3 +53,41 @@ class labeller(Operation):
             .reset_index()
         )
         return hv.Labels(result, ["x", "y"], col)
+
+
+class AnnDataOperation(param.ParameterizedFunction):
+    """Base class for operations that can be applied to AnnData objects."""
+
+    requires = param.List(default=[], doc="Tables required by this operation.")
+
+    def __hash__(self):
+        """Hash the operation based on its parameters."""
+        return hash((self.__class__,) + tuple(sorted(self.param.values().items())))
+
+
+class LeidenOperation(AnnDataOperation):
+    """Operation that performs Leiden clustering on AnnData."""
+
+    random_state = param.Integer(default=0, allow_None=True, doc="Random state for reproducibility.")
+
+    resolution = param.Number(default=1.0, bounds=(0, None), doc="Resolution parameter for clustering. Higher values lead to more clusters.")
+
+    n_iterations = param.Integer(default=2, doc="Number of iterations for the Leiden algorithm. -1 means iterate until convergence.")
+
+    key_added = param.String(default="leiden_{resolution:.1f}", doc="Key under which to store the clustering in adata.obs.")
+
+    def __call__(self, adata):
+        """Apply Leiden clustering to the AnnData object."""
+        if "neighbors" not in adata.uns:
+            sc.pp.neighbors(adata, random_state=self.random_state, copy=False)
+
+        sc.tl.leiden(
+            adata,
+            resolution=self.resolution,
+            n_iterations=self.n_iterations,
+            random_state=self.random_state,
+            key_added=self.key_added.format(resolution=self.resolution),
+            copy=False,
+            flavor="igraph",
+        )
+        return adata

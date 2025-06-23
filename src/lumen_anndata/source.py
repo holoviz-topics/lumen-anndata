@@ -162,6 +162,7 @@ class AnnDataSource(DuckDBSource):
         else:
             raise ValueError("Invalid 'adata' parameter: must be AnnData instance or path to .h5ad file.")
 
+        # Used to access the *RAW* data saved on file; DO NOT use `get` method to retrieve the processed data!
         if adata_path in self._opened:
             self._adata_store = self._opened[adata_path][0]
         else:
@@ -470,10 +471,10 @@ class AnnDataSource(DuckDBSource):
         else:
             self._var_ids_selected = None
 
-    def _apply_operations(self, adata: AnnData) -> None:
-        """Ensure all tables required by operations are materialized."""
+    def _apply_operations(self, adata: AnnData) -> AnnData:
+        """Apply all operations to the AnnData object and return the modified object."""
         if not self.operations:
-            return
+            return adata
 
         required_tables = []
         for operation in self.operations:
@@ -485,7 +486,7 @@ class AnnDataSource(DuckDBSource):
                 self._ensure_table_materialized(table)
 
         for operation in self.operations:
-            adata = operation.apply(adata)
+            adata = operation(adata)
         return adata
 
     def _get_as_anndata(self, query: dict[str, Any], table: str | None = None) -> AnnData:
@@ -524,7 +525,7 @@ class AnnDataSource(DuckDBSource):
         adata = self._adata_store[final_obs_labels, final_var_labels]
 
         if self.operations:
-            self._apply_operations(adata)
+            adata = self._apply_operations(adata)
 
         return adata
 
@@ -785,7 +786,10 @@ class AnnDataSource(DuckDBSource):
                     op_spec = deepcopy(op)
                     op_type = op_spec.pop('type')
                     op_class = resolve_module_reference(op_type)
-                    operations.append(op_class(**op_spec))
+                    if hasattr(op_class, "instance"):
+                        operations.append(op_class.instance(**op_spec))
+                    else:
+                        operations.append(op_class(**op_spec))
                 else:
                     # Already instantiated
                     operations.append(op)

@@ -5,9 +5,11 @@ Tests for lumen_anndata.source.AnnDataSource
 import anndata as ad
 import numpy as np
 import pandas as pd
+import param
 import pytest
 import scipy.sparse as sp
 
+from lumen_anndata.operations import AnnDataOperation
 from lumen_anndata.source import AnnDataSource
 
 
@@ -15,11 +17,7 @@ from lumen_anndata.source import AnnDataSource
 def fixed_sample_anndata():
     X = np.array([[1, 0, 3], [0, 5, 0], [2, 0, 0], [0, 1, 1]], dtype=np.float32)
     obs_df = pd.DataFrame(
-        {
-            "cell_type": pd.Categorical(["B", "T", "B", "NK"]),
-            "n_genes": [10, 20, 5, 15],
-            "sample_name": ["1261A", "1262C", "1263B", "1264D"]
-        },
+        {"cell_type": pd.Categorical(["B", "T", "B", "NK"]), "n_genes": [10, 20, 5, 15], "sample_name": ["1261A", "1262C", "1263B", "1264D"]},
         index=["cell_0", "cell_1", "cell_2", "cell_3"],
     )
     var_df = pd.DataFrame(
@@ -102,12 +100,16 @@ def test_initialization(sample_anndata):
 
     # Check that obs and var tables are correctly prepared
     obs_df_sql = source.execute("SELECT * FROM obs ORDER BY obs_id LIMIT 2")
-    pd.testing.assert_series_equal(obs_df_sql["obs_id"].astype(str).reset_index(drop=True), pd.Series(sample_anndata.obs_names[:2].astype(str)).reset_index(drop=True), check_names=False)
+    pd.testing.assert_series_equal(
+        obs_df_sql["obs_id"].astype(str).reset_index(drop=True), pd.Series(sample_anndata.obs_names[:2].astype(str)).reset_index(drop=True), check_names=False
+    )
     assert "cell_type" in obs_df_sql.columns
     assert obs_df_sql["cell_type"].tolist() == sample_anndata.obs["cell_type"].iloc[:2].tolist()
 
     var_df_sql = source.execute("SELECT * FROM var ORDER BY var_id LIMIT 2")
-    pd.testing.assert_series_equal(var_df_sql["var_id"].astype(str).reset_index(drop=True), pd.Series(sample_anndata.var_names[:2].astype(str)).reset_index(drop=True), check_names=False)
+    pd.testing.assert_series_equal(
+        var_df_sql["var_id"].astype(str).reset_index(drop=True), pd.Series(sample_anndata.var_names[:2].astype(str)).reset_index(drop=True), check_names=False
+    )
     assert "gene_type" in var_df_sql.columns
 
     # Test initialization parameters
@@ -141,7 +143,10 @@ def test_execute_basic_queries_fixed(fixed_sample_anndata):
     expected_obs_b = fixed_sample_anndata.obs[fixed_sample_anndata.obs["cell_type"] == "B"].copy()
     expected_obs_b["obs_id"] = expected_obs_b.index.astype(str)
     pd.testing.assert_frame_equal(
-        obs_result.reset_index(drop=True), expected_obs_b.reset_index(drop=True).sort_values("obs_id").reset_index(drop=True), check_dtype=False, check_categorical=False
+        obs_result.reset_index(drop=True),
+        expected_obs_b.reset_index(drop=True).sort_values("obs_id").reset_index(drop=True),
+        check_dtype=False,
+        check_categorical=False,
     )
 
     agg_result = source.execute("SELECT cell_type, SUM(n_genes) as total_genes FROM obs GROUP BY cell_type ORDER BY cell_type")
@@ -395,23 +400,23 @@ def test_create_sql_expr_source_with_modified_adata(fixed_sample_anndata):
     assert "obs_b" not in source.get_tables()
 
     # new source should have been subset
-    obs_df = source.get('obs')
-    new_obs_df = new_source.get('obs')
+    obs_df = source.get("obs")
+    new_obs_df = new_source.get("obs")
     assert not obs_df.equals(new_obs_df)
 
     # Create a new source with the modified adata
     # Modify the adata object by adding a new column
     modified_adata = fixed_sample_anndata.copy()
-    modified_adata.obs['new_column'] = ['value1', 'value2', 'value3', 'value4']
+    modified_adata.obs["new_column"] = ["value1", "value2", "value3", "value4"]
     new_adata_source = new_source.create_sql_expr_source(new_source.tables, adata=modified_adata)
 
     # The new source should have the new column
-    obs_df = new_adata_source.get('obs')
-    assert 'new_column' in obs_df.columns
-    assert list(obs_df['new_column']) == ['value1', 'value3']
+    obs_df = new_adata_source.get("obs")
+    assert "new_column" in obs_df.columns
+    assert list(obs_df["new_column"]) == ["value1", "value3"]
 
     # The obs_b should still be available in the new source
-    obs_b_df = new_adata_source.get('obs_b')
+    obs_b_df = new_adata_source.get("obs_b")
     assert not obs_b_df.empty
 
 
@@ -420,24 +425,24 @@ def test_create_sql_expr_source_updates_component_registry(fixed_sample_anndata)
     source = AnnDataSource(adata=fixed_sample_anndata)
 
     # Get initial state
-    initial_obs_columns = set(source._component_registry['obs']['obj_ref'].columns)
+    initial_obs_columns = set(source._component_registry["obs"]["obj_ref"].columns)
 
     # Modify adata
     modified_adata = fixed_sample_anndata.copy()
-    modified_adata.obs['test_col'] = 'test_value'
+    modified_adata.obs["test_col"] = "test_value"
 
     # Create new source
     new_source = source.create_sql_expr_source({}, adata=modified_adata)
 
     # Check that component registry was updated
-    new_obs_columns = set(new_source._component_registry['obs']['obj_ref'].columns)
-    assert 'test_col' in new_obs_columns
-    assert new_obs_columns == initial_obs_columns | {'test_col'}
+    new_obs_columns = set(new_source._component_registry["obs"]["obj_ref"].columns)
+    assert "test_col" in new_obs_columns
+    assert new_obs_columns == initial_obs_columns | {"test_col"}
 
     # Verify the SQL table also has the new column
     schema = new_source.execute('PRAGMA table_info("obs")')
-    column_names = schema['name'].tolist()
-    assert 'test_col' in column_names
+    column_names = schema["name"].tolist()
+    assert "test_col" in column_names
 
 
 def test_create_sql_expr_source(fixed_sample_anndata):
@@ -459,10 +464,9 @@ def test_create_sql_expr_source(fixed_sample_anndata):
     assert new_table_data.iloc[0]["cell_type"] == "T"
 
     # Test with multiple tables
-    multi_source = source.create_sql_expr_source({
-        "b_cells": "SELECT * FROM obs WHERE cell_type = 'B'",
-        "count_by_type": "SELECT cell_type, COUNT(*) as count FROM obs GROUP BY cell_type"
-    })
+    multi_source = source.create_sql_expr_source(
+        {"b_cells": "SELECT * FROM obs WHERE cell_type = 'B'", "count_by_type": "SELECT cell_type, COUNT(*) as count FROM obs GROUP BY cell_type"}
+    )
 
     # Verify both tables exist
     assert "b_cells" in multi_source.get_tables()
@@ -490,3 +494,28 @@ def test_create_sql_expr_source(fixed_sample_anndata):
     all_tables = [item[0] for item in multi_source._connection.execute("SHOW TABLES").fetchall()]
     assert "b_cells" in all_tables
     assert "count_by_type" in all_tables
+
+
+class TestOperation(AnnDataOperation):
+    """A simple test operation that adds a new column."""
+
+    some_value = param.Integer(default=42, doc="A test parameter for the operation.")
+
+    def __call__(self, adata):
+        adata.obs[f"test_{self.some_value}"] = ["test_value"] * len(adata.obs)
+        return adata
+
+
+def test_operation_persisted(fixed_sample_anndata):
+    """Test that operations are persisted in the new source."""
+
+    source = AnnDataSource(adata=fixed_sample_anndata, operations=[TestOperation.instance(), TestOperation.instance(some_value=100)])
+    assert "test_42" in source.get("obs", return_type="anndata").obs.columns
+    assert "test_100" in source.get("obs", return_type="anndata").obs.columns
+
+    new_source = source.create_sql_expr_source({"test_table": "SELECT * FROM obs WHERE cell_type = 'B'"})
+    assert "test_42" in new_source.get("obs", return_type="anndata").obs.columns
+    assert "test_100" in new_source.get("obs", return_type="anndata").obs.columns
+
+    assert "operations" in new_source.to_spec()
+    assert AnnDataSource.from_spec(new_source.to_spec()).get("obs", return_type="anndata").obs["test_42"].tolist()[0] == "test_value"

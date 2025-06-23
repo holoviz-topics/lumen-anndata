@@ -1,7 +1,8 @@
 import param
-import scanpy as sc
 
 from lumen.ai.analysis import Analysis
+
+from lumen_anndata.operations import LeidenOperation
 
 from .source import AnnDataSource
 from .views import ManifoldMapPanel
@@ -71,23 +72,20 @@ class LeidenComputation(AnnDataAnalysis):
         self.param.category.objects = available_cols
         self.category = available_cols[0]
 
-        if "neighbors" not in adata.uns:
-            sc.pp.neighbors(adata, random_state=self.random_state, copy=False)
-
-        sc.tl.leiden(
-            adata,
+        # Perform Leiden clustering
+        leiden_operation = LeidenOperation.instance(
+            random_state=self.random_state,
             resolution=self.resolution,
             n_iterations=self.n_iterations,
-            random_state=self.random_state,
             key_added=self.key_added.format(resolution=self.resolution),
-            copy=False,
-            flavor="igraph",
         )
+        adata = leiden_operation(adata)
 
         # Create new source with updated adata
         pipeline.source = source.create_sql_expr_source(
             tables=source.tables,
             adata=adata,
+            operations=source.operations + [leiden_operation],
         )
         self.message = (
             f"Leiden clustering completed with resolution {self.resolution} "
