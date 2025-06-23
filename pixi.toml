@@ -1,94 +1,117 @@
 [project]
 name = "lumen-anndata"
-channels = ["conda-forge"]
-platforms = ["osx-arm64", "osx-64", "linux-64", "win-64"]
+channels = ["pyviz/label/dev", "conda-forge", "bioconda"]
+platforms = ["linux-64", "osx-arm64", "osx-64", "win-64"]
 
 [tasks]
-postinstall = "pip install --no-build-isolation --no-deps --disable-pip-version-check -e ."
+install-git-deps = 'pip install --no-deps "lumen[ai] @ git+https://github.com/holoviz/lumen.git@main" "hv-anndata @ git+https://github.com/holoviz-topics/hv-anndata.git@main"'
+install = 'python -m pip install --no-deps --disable-pip-version-check -e .'
+postinstall = 'pixi run install-git-deps'
+
+[activation.env]
+PYTHONIOENCODING = "utf-8"
+
+[environments]
+test-310 = ["py310", "test-core", "test"]
+test-311 = ["py311", "test-core", "test"]
+test-312 = ["py312", "test-core", "test"]
+test-core = ["py313", "test-core"]
+docs = ["py311", "doc"]
+build = ["py311", "build"]
+lint = ["py311", "lint"]
 
 [dependencies]
-python = ">=3.11"
-
-[host-dependencies]
-pip = "*"
-hatchling = "*"
-hatch-vcs = "*"
+anndata = ">=0.11.4"
+bokeh = "*"
+holoviews = ">=1.17.0"
+hvplot = "*"
+jinja2 = ">3.0"
+numpy = "*"
+packaging = "*"
+pandas = "*"
 panel = ">=1.5.0"
-lumen = ">=0.9.0"
-setuptools = ">=61"
-setuptools-scm = "*"
+param = ">=1.9.0"
+pip = "*"
+pooch = ">=1.8.2"
+scanpy = ">=1.11.1"
 
-[feature.test.dependencies]
-pytest = ">=6"
-pytest-cov = "*"
-mypy = "*"
-[feature.test.tasks]
-test = "pytest"
-test-coverage = "pytest --cov=lumen_anndata --cov-report=xml --cov-report=term-missing"
+# Note: Git dependencies will be installed via pip in the install task
+# lumen[ai] @ git+https://github.com/holoviz/lumen.git@main
+# hv-anndata @ git+https://github.com/holoviz-topics/hv-anndata.git@main
 
-[feature.build.dependencies]
-python-build = "*"
-twine = "*"
-wheel = "*"
-[feature.build.tasks]
-build-wheel = "python -m build --no-isolation ."
-check-wheel = "twine check dist/*"
-
-[feature.lint.dependencies]
-pre-commit = "*"
-insert-license-header = "*"
-docformatter = "*"
-ruff = "*"
-prettier = "*"
-taplo = "*"
-pre-commit-hooks = "*"
-typos = "*"
-[feature.lint.tasks]
-pre-commit-install = "pre-commit install"
-pre-commit-run = "pre-commit run -a"
+[feature.py310.dependencies]
+python = "3.10.*"
 
 [feature.py311.dependencies]
 python = "3.11.*"
+
 [feature.py312.dependencies]
 python = "3.12.*"
 
-[feature.test-ui]
-channels = ["microsoft"]
+[feature.py312.activation.env]
+COVERAGE_CORE = "sysmon"
 
-[feature.test-ui.dependencies]
-playwright = { version = "*", channel = "microsoft" }
-pytest-playwright = { version = "*", channel = "microsoft" }
-pytest-asyncio = "*"
+[feature.py313.dependencies]
+python = "3.13.*"
+
+[feature.py313.activation.env]
+COVERAGE_CORE = "sysmon"
+
+# =============================================
+# =================== TESTS ===================
+# =============================================
+[feature.test-core.dependencies]
+psutil = "*"
+pytest = "*"
+pytest-cov = "*"
+pytest-github-actions-annotate-failures = "*"
 pytest-rerunfailures = "*"
 pytest-xdist = "*"
-jupyter_server = "*"
-esbuild = "*"
-packaging = "*"
+pytest-asyncio = "*"
 
-[feature.test-ui.tasks]
-_install-ui = 'playwright install chromium'
+[feature.test-core.tasks]
+test-unit = 'pytest tests -n logical --dist loadgroup'
 
-[feature.test-ui.tasks.test-ui]
-cmd = 'pytest tests/ui --ui --browser chromium -n logical --dist loadgroup --reruns 3 --reruns-delay 10'
-depends_on = ["_install-ui"]
+[feature.test.dependencies]
+matplotlib-base = ">=3.4"
+msgpack-python = "*"
+toolz = "*"
+watchfiles = "*"
 
-[feature.docs.dependencies]
+# =============================================
+# =================== DOCS ====================
+# =============================================
+[feature.doc.dependencies]
 mkdocs = "*"
 mkdocs-material = "*"
+mkdocstrings = "*"
 mkdocstrings-python = "*"
 
-[feature.docs.pypi-dependencies]
-mkdocs-pycafe = "*"
+[feature.doc.tasks]
+install-doc-deps = 'pip install mkdocs-pycafe'
+docs-build = 'mkdocs build'
+docs-serve = 'mkdocs serve'
 
-[feature.docs.tasks]
-docs = "mkdocs serve"
-docs-build = "mkdocs build"
+# =============================================
+# ================== BUILD ====================
+# =============================================
+[feature.build.dependencies]
+python-build = "*"
+conda-build = "*"
+hatchling = "*"
+hatch-vcs = "*"
 
-[environments]
-default = ["test"]
-py311 = ["py311", "test"]
-py312 = ["py312", "test"]
-test-ui = ["py312", "test", "test-ui"]
-docs = ["docs"]
-build = ["build"]
-lint = { features = ["lint"], no-default-feature = true }
+[feature.build.tasks]
+build-conda = 'bash scripts/conda/build.sh'
+build-pip = 'python -m build .'
+
+# =============================================
+# =================== LINT ====================
+# =============================================
+[feature.lint.dependencies]
+pre-commit = "*"
+ruff = "*"
+
+[feature.lint.tasks]
+lint = 'pre-commit run --all-files'
+lint-install = 'pre-commit install'
