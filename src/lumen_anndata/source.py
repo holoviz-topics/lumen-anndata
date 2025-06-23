@@ -661,7 +661,10 @@ class AnnDataSource(DuckDBSource):
 
         # Pass internal state to the new source
         params['_component_registry'] = self._component_registry
-        params['_materialized_tables'] = self._materialized_tables.copy()
+        # Only pass materialized tables that are not component registry tables
+        # Component registry tables will be re-materialized on demand
+        params['_materialized_tables'] = [table for table in self._materialized_tables
+                                         if table not in self._component_registry]
         params['_obs_ids_selected'] = self._obs_ids_selected
         params['_var_ids_selected'] = self._var_ids_selected
 
@@ -682,6 +685,19 @@ class AnnDataSource(DuckDBSource):
             table: self.get_sql_expr(table)
             for table in self._component_registry.keys()
         })
+
+        # Ensure component registry is properly set for the new source
+        source._component_registry = self._component_registry
+
+        # Ensure the new source has access to the AnnData store
+        source._adata_store = adata or self._adata_store
+        if adata is not None:
+            source._component_registry = source._build_component_registry_map()
+            # Re-register obs and var tables with the new AnnData's data using utility method
+            new_tables = source._prepare_obs_var_tables(adata)
+            source._register_tables(new_tables)
+            is_temp = self._opened[source._lumen_filename][1]
+            self._opened[source._lumen_filename] = (adata, is_temp)
 
         # Refine selections based on what's actually present in the new tables
         obs_ids = self._obs_ids_selected
@@ -704,16 +720,6 @@ class AnnDataSource(DuckDBSource):
 
         # Update the new source's selection state using helper method
         source._set_ids_from_series_or_array(obs_ids, var_ids)
-
-        # Ensure the new source has access to the AnnData store
-        source._adata_store = adata or self._adata_store
-        if adata is not None:
-            source._component_registry = source._build_component_registry_map()
-            # Re-register obs and var tables with the new AnnData's data using utility method
-            new_tables = source._prepare_obs_var_tables(adata)
-            source._register_tables(new_tables)
-            is_temp = self._opened[source._lumen_filename][1]
-            self._opened[source._lumen_filename] = (adata, is_temp)
 
         return source
 

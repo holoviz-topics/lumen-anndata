@@ -53,13 +53,13 @@ class LeidenComputation(AnnDataAnalysis):
     )
 
     n_iterations = param.Integer(
-        default=-1,
+        default=2,
         doc="""
         Number of iterations for the Leiden algorithm. -1 means iterate until convergence.""",
     )
 
     key_added = param.String(
-        default="leiden_{resolution}",
+        default="leiden_{resolution:.1f}",
         doc="""
         Key under which to store the clustering in adata.obs.""",
     )
