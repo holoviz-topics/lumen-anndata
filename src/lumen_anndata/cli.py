@@ -1,6 +1,7 @@
 """Command-line interface for lumen-anndata."""
 
 import sys
+
 from pathlib import Path
 
 

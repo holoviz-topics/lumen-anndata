@@ -5,9 +5,11 @@ Tests for lumen_anndata.source.AnnDataSource
 import anndata as ad
 import numpy as np
 import pandas as pd
+import param
 import pytest
 import scipy.sparse as sp
 
+from lumen_anndata.operations import AnnDataOperation
 from lumen_anndata.source import AnnDataSource
 
 
@@ -15,11 +17,7 @@ from lumen_anndata.source import AnnDataSource
 def fixed_sample_anndata():
     X = np.array([[1, 0, 3], [0, 5, 0], [2, 0, 0], [0, 1, 1]], dtype=np.float32)
     obs_df = pd.DataFrame(
-        {
-            "cell_type": pd.Categorical(["B", "T", "B", "NK"]),
-            "n_genes": [10, 20, 5, 15],
-            "sample_name": ["1261A", "1262C", "1263B", "1264D"]
-        },
+        {"cell_type": pd.Categorical(["B", "T", "B", "NK"]), "n_genes": [10, 20, 5, 15], "sample_name": ["1261A", "1262C", "1263B", "1264D"]},
         index=["cell_0", "cell_1", "cell_2", "cell_3"],
     )
     var_df = pd.DataFrame(
@@ -95,7 +93,6 @@ def test_initialization(sample_anndata):
     source = AnnDataSource(adata=sample_anndata)
 
     assert source._adata_store is not None
-    assert source._adata_store is not sample_anndata  # Should be a copy
     assert source._component_registry, "Component registry should not be empty"
     assert "obs" in source._materialized_tables
     assert "var" in source._materialized_tables
@@ -103,17 +100,20 @@ def test_initialization(sample_anndata):
 
     # Check that obs and var tables are correctly prepared
     obs_df_sql = source.execute("SELECT * FROM obs ORDER BY obs_id LIMIT 2")
-    pd.testing.assert_series_equal(obs_df_sql["obs_id"].astype(str).reset_index(drop=True), pd.Series(sample_anndata.obs_names[:2].astype(str)).reset_index(drop=True), check_names=False)
+    pd.testing.assert_series_equal(
+        obs_df_sql["obs_id"].astype(str).reset_index(drop=True), pd.Series(sample_anndata.obs_names[:2].astype(str)).reset_index(drop=True), check_names=False
+    )
     assert "cell_type" in obs_df_sql.columns
     assert obs_df_sql["cell_type"].tolist() == sample_anndata.obs["cell_type"].iloc[:2].tolist()
 
     var_df_sql = source.execute("SELECT * FROM var ORDER BY var_id LIMIT 2")
-    pd.testing.assert_series_equal(var_df_sql["var_id"].astype(str).reset_index(drop=True), pd.Series(sample_anndata.var_names[:2].astype(str)).reset_index(drop=True), check_names=False)
+    pd.testing.assert_series_equal(
+        var_df_sql["var_id"].astype(str).reset_index(drop=True), pd.Series(sample_anndata.var_names[:2].astype(str)).reset_index(drop=True), check_names=False
+    )
     assert "gene_type" in var_df_sql.columns
 
     # Test initialization parameters
-    source_with_params = AnnDataSource(adata=sample_anndata, dense_matrix_warning_threshold=500, filter_in_sql=False)
-    assert source_with_params.dense_matrix_warning_threshold == 500
+    source_with_params = AnnDataSource(adata=sample_anndata, filter_in_sql=False)
     assert source_with_params.filter_in_sql is False
     assert source_with_params._obs_ids_selected is None  # Check initial selection state
     assert source_with_params._var_ids_selected is None
@@ -126,18 +126,9 @@ def test_get_tables(sample_anndata):
     expected_tables = {
         "obs",
         "var",
-        "X",
-        "layer_normalized",
-        "layer_binary",
         "obsm_X_pca",
         "obsm_X_umap",
         "varm_PCs",
-        "obsp_distances",
-        "varp_correlations",
-        "uns_clustering_params",
-        "uns_metadata",
-        "uns_colors",
-        "uns_keys",
     }
     all_tables = source.get_tables()
     assert set(all_tables) == expected_tables
@@ -145,48 +136,22 @@ def test_get_tables(sample_anndata):
     materialized_tables = source.get_tables(materialized_only=True)
     assert set(materialized_tables) == {"obs", "var"}
 
-    # Materialize X and check again
-    source.get("X", limit=1)  # Querying X should materialize it
-    materialized_tables_after_get = source.get_tables(materialized_only=True)
-    assert set(materialized_tables_after_get) == {"obs", "var", "X"}
-
 
 def test_execute_basic_queries_fixed(fixed_sample_anndata):
     source = AnnDataSource(adata=fixed_sample_anndata)
-    obs_result = source.execute("SELECT * FROM obs WHERE cell_type = 'B' ORDER BY obs_id")
+    obs_result = source.execute("SELECT * FROM  obs WHERE cell_type = 'B' ORDER BY obs_id")
     expected_obs_b = fixed_sample_anndata.obs[fixed_sample_anndata.obs["cell_type"] == "B"].copy()
     expected_obs_b["obs_id"] = expected_obs_b.index.astype(str)
     pd.testing.assert_frame_equal(
-        obs_result.reset_index(drop=True), expected_obs_b.reset_index(drop=True).sort_values("obs_id").reset_index(drop=True), check_dtype=False, check_categorical=False
+        obs_result.reset_index(drop=True),
+        expected_obs_b.reset_index(drop=True).sort_values("obs_id").reset_index(drop=True),
+        check_dtype=False,
+        check_categorical=False,
     )
 
     agg_result = source.execute("SELECT cell_type, SUM(n_genes) as total_genes FROM obs GROUP BY cell_type ORDER BY cell_type")
     expected_agg = fixed_sample_anndata.obs.groupby("cell_type", observed=False)["n_genes"].sum().reset_index(name="total_genes").sort_values("cell_type")
     pd.testing.assert_frame_equal(agg_result.reset_index(drop=True), expected_agg.reset_index(drop=True), check_dtype=False, check_categorical=False)
-
-
-def test_execute_matrix_queries_fixed(fixed_sample_anndata):
-    source = AnnDataSource(adata=fixed_sample_anndata)
-
-    x_result = source.execute("SELECT * FROM X WHERE obs_id='cell_0' AND var_id='gene_A'")
-    assert len(x_result) == 1
-    x_value = fixed_sample_anndata["cell_0", "gene_A"].X
-    if isinstance(x_value, np.ndarray):
-        assert x_result["value"].iloc[0] == pytest.approx(x_value[0, 0])
-    else:
-        assert x_result["value"].iloc[0] == pytest.approx(x_value.toarray()[0, 0])
-
-    layer_result = source.execute("SELECT * FROM layer_counts WHERE obs_id='cell_1' AND var_id='gene_B'")
-    assert len(layer_result) == 1
-    layer_value = fixed_sample_anndata["cell_1", "gene_B"].layers["counts"]
-    if isinstance(layer_value, np.ndarray):
-        assert layer_result["value"].iloc[0] == pytest.approx(layer_value[0, 0])
-    else:
-        assert layer_result["value"].iloc[0] == pytest.approx(layer_value.toarray()[0, 0])
-
-    # Ensure table 'X' is now materialized
-    assert "X" in source._materialized_tables
-    assert "layer_counts" in source._materialized_tables
 
 
 def test_get_fixed_dataframe(fixed_sample_anndata):
@@ -200,11 +165,6 @@ def test_get_fixed_dataframe(fixed_sample_anndata):
     )
     assert source._obs_ids_selected is not None
     assert set(source._obs_ids_selected) == set(expected_b_ids)
-
-    # Get X after obs selection
-    x_df_after_obs_filter = source.get("X")
-    assert set(x_df_after_obs_filter["obs_id"].unique()) == set(expected_b_ids)
-    assert len(x_df_after_obs_filter["var_id"].unique()) == fixed_sample_anndata.n_vars
 
     # Test with no match filter
     no_match_df = source.get("obs", cell_type="NonExistent")
@@ -220,9 +180,9 @@ def test_get_anndata(fixed_sample_anndata):
     b_cell_ids = fixed_sample_anndata.obs_names[fixed_sample_anndata.obs["cell_type"] == "B"].tolist()
     source.get("obs", cell_type="B")
 
-    # Get AnnData for 'X' with obs filter, and var filter directly in query
+    # Get AnnData with obs filter, and var filter directly in query
     highly_var_gene_ids = fixed_sample_anndata.var_names[fixed_sample_anndata.var["highly_variable"]].tolist()
-    filtered_adata = source.get("X", return_type="anndata", highly_variable=True)
+    filtered_adata = source.get("anndata", return_type="anndata", highly_variable=True)
 
     assert isinstance(filtered_adata, ad.AnnData)
     pd.testing.assert_index_equal(filtered_adata.obs_names.astype(str), pd.Index(b_cell_ids).astype(str))
@@ -233,19 +193,16 @@ def test_get_anndata(fixed_sample_anndata):
     if "cell_0" in filtered_adata.obs_names and "gene_A" in filtered_adata.var_names:
         assert filtered_adata["cell_0", "gene_A"].X.item() == pytest.approx(fixed_sample_anndata["cell_0", "gene_A"].X.item())
 
-    no_obs_adata = source.get("X", return_type="anndata", cell_type="NonExistentType")
+    no_obs_adata = source.get("anndata", return_type="anndata", cell_type="NonExistentType")
     assert no_obs_adata.n_obs == 0
     assert no_obs_adata.n_vars == fixed_sample_anndata.n_vars
 
 
 def test_materialization_on_execute(sample_anndata):
     source = AnnDataSource(adata=sample_anndata)
-    assert "X" not in source._materialized_tables
-    source.execute("SELECT * FROM X LIMIT 1")
-    assert "X" in source._materialized_tables
-    assert "layer_normalized" not in source._materialized_tables
-    source.execute("SELECT * FROM layer_normalized nl JOIN X x ON nl.obs_id = x.obs_id LIMIT 1")
-    assert "layer_normalized" in source._materialized_tables
+    assert "obsm_X_pca" not in source._materialized_tables
+    source.execute("SELECT * FROM obsm_X_pca LIMIT 1")
+    assert "obsm_X_pca" in source._materialized_tables
 
 
 def test_get_adata_slice_labels(fixed_sample_anndata):
@@ -291,28 +248,6 @@ def test_execute_basic_queries(sample_anndata):
     assert "avg_genes" in agg_result.columns
 
 
-def test_execute_matrix_queries(sample_anndata):
-    """Test executing queries on matrix components."""
-    source = AnnDataSource(adata=sample_anndata)
-
-    # Query the main expression matrix (X)
-    x_result = source.execute("SELECT * FROM X LIMIT 5")
-    assert "obs_id" in x_result.columns
-    assert "var_id" in x_result.columns
-    assert "value" in x_result.columns
-
-    # Query a layer
-    layer_result = source.execute("SELECT * FROM layer_normalized LIMIT 5")
-    assert "obs_id" in layer_result.columns
-    assert "var_id" in layer_result.columns
-    assert "value" in layer_result.columns
-
-    # Query a pairwise matrix (obsp)
-    obsp_result = source.execute("SELECT * FROM obsp_distances LIMIT 5")
-    assert "obs_id_1" in obsp_result.columns or "obs_id" in obsp_result.columns
-    assert "value" in obsp_result.columns
-
-
 def test_execute_multidim_queries(sample_anndata):
     """Test executing queries on multidimensional arrays."""
     source = AnnDataSource(adata=sample_anndata)
@@ -328,49 +263,32 @@ def test_execute_multidim_queries(sample_anndata):
     assert "PCs_0" in varm_result.columns
 
 
-def test_execute_uns_queries(sample_anndata):
-    """Test executing queries on unstructured data."""
-    source = AnnDataSource(adata=sample_anndata)
-
-    # Query uns_keys
-    uns_keys = source.execute("SELECT * FROM uns_keys")
-    assert "uns_key" in uns_keys.columns
-    assert "clustering_params" in uns_keys["uns_key"].values
-    assert "metadata" in uns_keys["uns_key"].values
-
-    # Query specific uns component
-    colors = source.execute("SELECT * FROM uns_colors")
-    assert "value" in colors.columns
-    assert len(colors) == 3  # We had 3 colors
-
-
 def test_execute_with_joins(sample_anndata):
     """Test executing queries with joins between tables."""
     source = AnnDataSource(adata=sample_anndata)
 
-    # Join obs metadata with expression data
+    # Join obs metadata with obsm_X_pca data
     join_result = source.execute("""
-        SELECT o.cell_type, COUNT(*) as expr_count
-        FROM X x
+        SELECT o.cell_type, COUNT(*) as pca_count
+        FROM obsm_X_pca x
         JOIN obs o ON x.obs_id = o.obs_id
-        WHERE x.value > 0
         GROUP BY o.cell_type
     """)
 
     assert "cell_type" in join_result.columns
-    assert "expr_count" in join_result.columns
+    assert "pca_count" in join_result.columns
 
-    # Join var metadata with expression data
-    gene_expr = source.execute("""
-        SELECT v.gene_type, AVG(x.value) as avg_expr
-        FROM X x
-        JOIN var v ON x.var_id = v.var_id
+    # Join var metadata with varm_PCs data
+    gene_pca = source.execute("""
+        SELECT v.gene_type, COUNT(*) as pc_count
+        FROM varm_PCs p
+        JOIN var v ON p.var_id = v.var_id
         GROUP BY v.gene_type
     """)
 
-    assert "gene_type" in gene_expr.columns
-    assert "avg_expr" in gene_expr.columns
-    assert len(gene_expr) <= 3  # Should have at most 3 gene types
+    assert "gene_type" in gene_pca.columns
+    assert "pc_count" in gene_pca.columns
+    assert len(gene_pca) <= 3  # Should have at most 3 gene types
 
 
 def test_get_dataframe_random(sample_anndata):
@@ -390,10 +308,10 @@ def test_get_dataframe_random(sample_anndata):
     multi_sample = source.get("obs", sample_id=["sample1", "sample2"])
     assert all(multi_sample["sample_id"].isin(["sample1", "sample2"]))
 
-    # Get expression data with selection tracking from previous query
-    # (This tests that the sample_id filtered obs_ids are used for X)
-    expr_data = source.get("X")
-    assert all(np.isin(expr_data["obs_id"], filtered["obs_id"]))
+    # Get obsm data with selection tracking from previous query
+    # (This tests that the sample_id filtered obs_ids are used for obsm_X_pca)
+    pca_data = source.get("obsm_X_pca")
+    assert all(np.isin(pca_data["obs_id"], filtered["obs_id"]))
 
     # Verify internal state tracking
     assert source._obs_ids_selected is not None
@@ -408,7 +326,7 @@ def test_get_anndata_sample(sample_anndata):
     source.get("obs", cell_type="T")
 
     # Get filtered AnnData
-    filtered_adata = source.get("X", return_type="anndata")
+    filtered_adata = source.get("anndata", return_type="anndata")
 
     # Check if filtering was applied correctly
     assert isinstance(filtered_adata, ad.AnnData)
@@ -416,9 +334,9 @@ def test_get_anndata_sample(sample_anndata):
     assert filtered_adata.n_obs < sample_anndata.n_obs
     assert filtered_adata.n_vars == sample_anndata.n_vars  # Vars not filtered
 
-    # Test filtering both obs and vars
-    source.get("var", highly_variable=True)  # Establish var selection
-    filtered_adata_2 = source.get("X", return_type="anndata")
+    # Test filtering both obs and vars in the same call
+    # This passes the filter directly to the AnnData getter
+    filtered_adata_2 = source.get("anndata", return_type="anndata", highly_variable=True)
 
     # Check if both filters were applied
     assert np.all(filtered_adata_2.obs["cell_type"] == "T")
@@ -441,16 +359,16 @@ def test_chained_filtering(sample_anndata):
     assert len(t_cells_sample1) < t_cell_count  # Should be fewer rows
 
     # Should now have both filters applied
-    expr_data = source.get("X")
+    pca_data = source.get("obsm_X_pca")
 
     # Verify through direct SQL to check
     verification = source.execute("""
-        SELECT COUNT(*) as count FROM X x
+        SELECT COUNT(*) as count FROM obsm_X_pca x
         JOIN obs o ON x.obs_id = o.obs_id
         WHERE o.cell_type = 'T' AND o.sample_id = 'sample1'
     """)
 
-    assert len(expr_data) == verification["count"].iloc[0]
+    assert len(pca_data) == verification["count"].iloc[0]
 
 
 def test_get_with_sql_transforms(sample_anndata):
@@ -472,6 +390,61 @@ def test_get_with_sql_transforms(sample_anndata):
     assert all(combined["sample_id"] == "sample1")
 
 
+def test_create_sql_expr_source_with_modified_adata(fixed_sample_anndata):
+    """Test creating a new source with modified AnnData preserves modifications."""
+    source = AnnDataSource(adata=fixed_sample_anndata)
+
+    new_source = source.create_sql_expr_source({"obs_b": "SELECT * FROM obs WHERE cell_type = 'B'"})
+
+    # The old source should retain the original adata
+    assert "obs_b" not in source.get_tables()
+
+    # new source should have been subset
+    obs_df = source.get("obs")
+    new_obs_df = new_source.get("obs")
+    assert not obs_df.equals(new_obs_df)
+
+    # Create a new source with the modified adata
+    # Modify the adata object by adding a new column
+    modified_adata = fixed_sample_anndata.copy()
+    modified_adata.obs["new_column"] = ["value1", "value2", "value3", "value4"]
+    new_adata_source = new_source.create_sql_expr_source(new_source.tables, adata=modified_adata)
+
+    # The new source should have the new column
+    obs_df = new_adata_source.get("obs")
+    assert "new_column" in obs_df.columns
+    assert list(obs_df["new_column"]) == ["value1", "value3"]
+
+    # The obs_b should still be available in the new source
+    obs_b_df = new_adata_source.get("obs_b")
+    assert not obs_b_df.empty
+
+
+def test_create_sql_expr_source_updates_component_registry(fixed_sample_anndata):
+    """Test that component registry is updated when creating source with modified adata."""
+    source = AnnDataSource(adata=fixed_sample_anndata)
+
+    # Get initial state
+    initial_obs_columns = set(source._component_registry["obs"]["obj_ref"].columns)
+
+    # Modify adata
+    modified_adata = fixed_sample_anndata.copy()
+    modified_adata.obs["test_col"] = "test_value"
+
+    # Create new source
+    new_source = source.create_sql_expr_source({}, adata=modified_adata)
+
+    # Check that component registry was updated
+    new_obs_columns = set(new_source._component_registry["obs"]["obj_ref"].columns)
+    assert "test_col" in new_obs_columns
+    assert new_obs_columns == initial_obs_columns | {"test_col"}
+
+    # Verify the SQL table also has the new column
+    schema = new_source.execute('PRAGMA table_info("obs")')
+    column_names = schema["name"].tolist()
+    assert "test_col" in column_names
+
+
 def test_create_sql_expr_source(fixed_sample_anndata):
     """Test creating a new source with SQL expressions."""
     source = AnnDataSource(adata=fixed_sample_anndata)
@@ -490,14 +463,10 @@ def test_create_sql_expr_source(fixed_sample_anndata):
     assert new_table_data.iloc[0]["sample_name"] == "1262C"
     assert new_table_data.iloc[0]["cell_type"] == "T"
 
-    # Both sources share the same connection, so the original source also sees the new table
-    assert "new_table" in source.get_tables()
-
     # Test with multiple tables
-    multi_source = source.create_sql_expr_source({
-        "b_cells": "SELECT * FROM obs WHERE cell_type = 'B'",
-        "count_by_type": "SELECT cell_type, COUNT(*) as count FROM obs GROUP BY cell_type"
-    })
+    multi_source = source.create_sql_expr_source(
+        {"b_cells": "SELECT * FROM obs WHERE cell_type = 'B'", "count_by_type": "SELECT cell_type, COUNT(*) as count FROM obs GROUP BY cell_type"}
+    )
 
     # Verify both tables exist
     assert "b_cells" in multi_source.get_tables()
@@ -525,3 +494,28 @@ def test_create_sql_expr_source(fixed_sample_anndata):
     all_tables = [item[0] for item in multi_source._connection.execute("SHOW TABLES").fetchall()]
     assert "b_cells" in all_tables
     assert "count_by_type" in all_tables
+
+
+class TestOperation(AnnDataOperation):
+    """A simple test operation that adds a new column."""
+
+    some_value = param.Integer(default=42, doc="A test parameter for the operation.")
+
+    def __call__(self, adata):
+        adata.obs[f"test_{self.some_value}"] = ["test_value"] * len(adata.obs)
+        return adata
+
+
+def test_operation_persisted(fixed_sample_anndata):
+    """Test that operations are persisted in the new source."""
+
+    source = AnnDataSource(adata=fixed_sample_anndata, operations=[TestOperation.instance(), TestOperation.instance(some_value=100)])
+    assert "test_42" in source.get("obs", return_type="anndata").obs.columns
+    assert "test_100" in source.get("obs", return_type="anndata").obs.columns
+
+    new_source = source.create_sql_expr_source({"test_table": "SELECT * FROM obs WHERE cell_type = 'B'"})
+    assert "test_42" in new_source.get("obs", return_type="anndata").obs.columns
+    assert "test_100" in new_source.get("obs", return_type="anndata").obs.columns
+
+    assert "operations" in new_source.to_spec()
+    assert AnnDataSource.from_spec(new_source.to_spec()).get("obs", return_type="anndata").obs["test_42"].tolist()[0] == "test_value"

@@ -1,4 +1,5 @@
 import asyncio
+
 from pathlib import Path
 
 from lumen.ai.embeddings import OpenAIEmbeddings
