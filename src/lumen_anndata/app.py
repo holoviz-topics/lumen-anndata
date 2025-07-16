@@ -3,7 +3,9 @@ from pathlib import Path
 import lumen.ai as lmai
 import panel as pn
 
-from lumen_anndata.analysis import LeidenComputation, ManifoldMapVisualization
+from lumen_anndata.analysis import (
+    DotMapVisualization, LeidenComputation, ManifoldMapVisualization,
+)
 from lumen_anndata.utils import upload_h5ad
 
 pn.config.disconnect_notification = "Connection lost, try reloading the page!"
@@ -37,7 +39,7 @@ ui = lmai.ExplorerUI(
     table_upload_callbacks={
         ".h5ad": upload_h5ad,
     },
-    analyses=[ManifoldMapVisualization, LeidenComputation],
+    analyses=[ManifoldMapVisualization, LeidenComputation, DotMapVisualization],
     log_level="DEBUG",
 )
 ui.servable()
