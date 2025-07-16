@@ -5,7 +5,7 @@ from lumen.ai.analysis import Analysis
 from lumen_anndata.operations import LeidenOperation
 
 from .source import AnnDataSource
-from .views import ManifoldMapPanel
+from .views import DotMapPanel, ManifoldMapPanel
 
 
 class AnnDataAnalysis(Analysis):
@@ -32,6 +32,15 @@ class ManifoldMapVisualization(AnnDataAnalysis):
 
     def __call__(self, pipeline):
         return ManifoldMapPanel(pipeline=pipeline)
+
+
+class DotMapVisualization(AnnDataAnalysis):
+    """
+    Use this to visualize any requests for dot map results.
+    """
+
+    def __call__(self, pipeline):
+        return DotMapPanel(pipeline=pipeline)
 
 
 class LeidenComputation(AnnDataAnalysis):
@@ -88,7 +97,6 @@ class LeidenComputation(AnnDataAnalysis):
             operations=source.operations + [leiden_operation],
         )
         self.message = (
-            f"Leiden clustering completed with resolution {self.resolution} "
-            f"and stored in `adata.obs['{self.key_added.format(resolution=self.resolution)}']`."
+            f"Leiden clustering completed with resolution {self.resolution} and stored in `adata.obs['{self.key_added.format(resolution=self.resolution)}']`."
         )
         return pipeline
