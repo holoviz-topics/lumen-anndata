@@ -8,7 +8,7 @@ from lumen_anndata.utils import upload_h5ad
 
 pn.config.disconnect_notification = "Connection lost, try reloading the page!"
 pn.config.ready_notification = "Application fully loaded."
-pn.extension("filedropper")
+pn.extension("filedropper", "jsoneditor")
 
 INSTRUCTIONS = """
 You are an expert scientist working in Python, with a specialty using Anndata and Scanpy.
