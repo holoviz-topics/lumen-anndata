@@ -18,7 +18,7 @@ class CellXGeneSourceControls(SourceControls):
     census_version = param.String("2025-01-30")
 
     input_placeholder = param.String(
-        default="Select datasets by clicking the mouse icon, or input custom URLs, delimited by new lines",
+        default="Select datasets by clicking the download icon, or input custom URLs, delimited by new lines",
         doc="Placeholder text for input field",
     )
 
@@ -66,7 +66,7 @@ class CellXGeneSourceControls(SourceControls):
                 "dataset_total_cell_count": "Cells",
                 "dataset_id": "Dataset ID",
             },
-            buttons={"download": '<i class="fa fa-computer-mouse"></i>'},
+            buttons={"download": '<i class="fa fa-download"></i>'},
             # Column widths
             widths={"download": "2%", "collection_name": "40%", "dataset_title": "35%", "dataset_total_cell_count": "8%", "dataset_id": "10%"},
             # Formatters
