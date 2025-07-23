@@ -4,11 +4,12 @@ import lumen.ai as lmai
 import panel as pn
 
 from lumen_anndata.analysis import LeidenComputation, ManifoldMapVisualization
+from lumen_anndata.controls import CellXGeneSourceControls
 from lumen_anndata.utils import upload_h5ad
 
 pn.config.disconnect_notification = "Connection lost, try reloading the page!"
 pn.config.ready_notification = "Application fully loaded."
-pn.extension("filedropper")
+pn.extension("filedropper", "jsoneditor")
 
 INSTRUCTIONS = """
 You are an expert scientist working in Python, with a specialty using Anndata and Scanpy.
@@ -38,6 +39,7 @@ ui = lmai.ExplorerUI(
         ".h5ad": upload_h5ad,
     },
     analyses=[ManifoldMapVisualization, LeidenComputation],
+    source_controls=CellXGeneSourceControls,
     log_level="DEBUG",
 )
 ui.servable()
