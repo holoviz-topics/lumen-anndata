@@ -12,6 +12,13 @@ build-backend = "hatchling.build"
 [tool.setuptools_scm]
 version_scheme = "post-release"
 
+[tool.setuptools]
+packages = { find = { where = ["src"] } }
+include-package-data = true
+
+[tool.setuptools.package-data]
+"lumen_anndata" = ["**/*.db", "**/*.js", "lumen_anndata/embeddings/*"]
+
 [project]
 name = "lumen-anndata"
 dynamic = ["version"]
