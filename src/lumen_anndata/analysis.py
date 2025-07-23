@@ -5,7 +5,7 @@ from lumen.ai.analysis import Analysis
 from lumen_anndata.operations import LeidenOperation
 
 from .source import AnnDataSource
-from .views import ManifoldMapPanel
+from .views import ClustermapPanel, ManifoldMapPanel
 
 
 class AnnDataAnalysis(Analysis):
@@ -92,3 +92,28 @@ class LeidenComputation(AnnDataAnalysis):
             f"and stored in `adata.obs['{self.key_added.format(resolution=self.resolution)}']`."
         )
         return pipeline
+
+
+class ClustermapVisualization(AnnDataAnalysis):
+    """Create a clustered heatmap showing mean expression by groups, following scanpy paradigm."""
+
+    def __call__(self, pipeline):
+        # Simple validation that we have the required data
+        source = pipeline.source
+        adata = source.get(pipeline.table, return_type="anndata")
+
+        # Check we have observation and variable data
+        if len(adata.obs.columns) == 0:
+            self.message = "No observation metadata available for grouping."
+            return pipeline
+
+        if len(adata.var.index) == 0:
+            self.message = "No genes available in the dataset."
+            return pipeline
+
+        self.message = (
+            f"HeatmapDendrogram view ready with {len(adata.obs.columns)} grouping options "
+            f"and {len(adata.var.index)} genes available."
+        )
+
+        return ClustermapPanel(pipeline=pipeline)
