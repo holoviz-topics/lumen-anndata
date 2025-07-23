@@ -1,3 +1,5 @@
+import asyncio
+
 from io import BytesIO
 
 import cellxgene_census
@@ -125,6 +127,7 @@ class CellXGeneSourceControls(SourceControls):
         Uploads an h5ad file and returns an AnnDataSource.
         """
         with self._tabulator.param.update(loading=True), self.param.update(disabled=True):
+            await asyncio.sleep(0.05)  # yield the event loop to ensure UI updates
             dataset_id = self.datasets_df.loc[event.row, "dataset_id"]
             locator = cellxgene_census.get_source_h5ad_uri(dataset_id, census_version=self.census_version)
             # Initialize s3fs
