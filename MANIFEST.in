@@ -1,1 +1,2 @@
 recursive-include lumen_anndata models/*.js
+include src/lumen_anndata/embeddings/scanpy.db

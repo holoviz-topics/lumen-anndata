@@ -171,3 +171,10 @@ raw-options = { version_scheme = "no-guess-dev" }
 
 [tool.hatch.metadata]
 allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+include = [
+    "src/lumen_anndata/**/*.py",
+    "src/lumen_anndata/**/*.db",
+    "src/lumen_anndata/models/*.js",
+]
