@@ -4,6 +4,7 @@ import lumen.ai as lmai
 import panel as pn
 
 from lumen_anndata.analysis import LeidenComputation, ManifoldMapVisualization
+from lumen_anndata.controls import CellXGeneSourceControls
 from lumen_anndata.utils import upload_h5ad
 
 pn.config.disconnect_notification = "Connection lost, try reloading the page!"
@@ -38,6 +39,7 @@ ui = lmai.ExplorerUI(
         ".h5ad": upload_h5ad,
     },
     analyses=[ManifoldMapVisualization, LeidenComputation],
+    source_controls=CellXGeneSourceControls,
     log_level="DEBUG",
 )
 ui.servable()
