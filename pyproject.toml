@@ -45,7 +45,8 @@ dependencies = [
     "anndata >=0.11.4",
     "pooch >=1.8.2",
     "scanpy >=1.11.1",
-    "hv-anndata >=0.0.1"
+    "hv-anndata >=0.0.1",
+    "cellxgene_census >=1.17.0",
 ]
 
 
