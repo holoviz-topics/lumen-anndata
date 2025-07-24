@@ -146,12 +146,16 @@ class CellXGeneSourceControls(SourceControls):
             self.param.trigger("trigger_add")  # automatically trigger the add
 
     def __panel__(self):
-        original_controls = super().__panel__()
-        return pn.Column(
+        czi_controls = pn.Column(
             pn.pane.Markdown(
-                object="## CELLxGENE Census Source Input\n*Click on download icons to ingest datasets.",
+                object="*Click on download icons to ingest datasets.*",
                 margin=0,
             ),
             self._tabulator,
-            original_controls,
+        )
+        original_controls = super().__panel__()
+        return pn.Tabs(
+            ("Upload Datasets", original_controls),
+            ("CELLxGENE Census Datasets", czi_controls),
+            dynamic=True,
         )
