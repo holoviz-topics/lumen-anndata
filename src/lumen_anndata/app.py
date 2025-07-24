@@ -3,7 +3,9 @@ from pathlib import Path
 import lumen.ai as lmai
 import panel as pn
 
-from lumen_anndata.analysis import LeidenComputation, ManifoldMapVisualization
+from lumen_anndata.analysis import (
+    ClustermapVisualization, LeidenComputation, ManifoldMapVisualization,
+)
 from lumen_anndata.controls import CellXGeneSourceControls
 from lumen_anndata.utils import upload_h5ad
 
@@ -38,7 +40,7 @@ ui = lmai.ExplorerUI(
     table_upload_callbacks={
         ".h5ad": upload_h5ad,
     },
-    analyses=[ManifoldMapVisualization, LeidenComputation],
+    analyses=[ManifoldMapVisualization, LeidenComputation, ClustermapVisualization],
     source_controls=CellXGeneSourceControls,
     log_level="DEBUG",
 )
