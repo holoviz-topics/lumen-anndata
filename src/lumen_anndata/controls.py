@@ -28,30 +28,14 @@ class CellXGeneSourceControls(SourceControls):
 
     def __init__(self, **params):
         super().__init__(**params)
-
-        self.datasets_df = self._load_datasets_catalog(self.census_version, self.uri, **self.soma_kwargs)
-
-        # Select only user-friendly columns for the main table
-        display_df = self.datasets_df[
-            [
-                "collection_name",
-                "dataset_title",
-                "dataset_total_cell_count",
-                "dataset_id",  # Keep this for row content lookup
-            ]
-        ].copy()
-
         filters = {
             "collection_name": {"type": "input", "func": "like", "placeholder": "Enter name"},
             "dataset_title": {"type": "input", "func": "like", "placeholder": "Enter title"},
             "dataset_total_cell_count": {"type": "number", "func": ">=", "placeholder": "Enter min cells"},
             "dataset_id": {"type": "input", "func": "like", "placeholder": "Enter ID"},
         }
-
-        # Create tabulator
         self._tabulator = pn.widgets.Tabulator(
-            display_df,
-            page_size=10,
+            page_size=5,
             pagination="local",
             sizing_mode="stretch_width",
             show_index=False,
@@ -73,13 +57,35 @@ class CellXGeneSourceControls(SourceControls):
             formatters={"dataset_total_cell_count": {"type": "money", "thousand": ",", "symbol": ""}},
             # Disable editing
             editors={"collection_name": None, "dataset_title": None, "dataset_total_cell_count": None, "dataset_id": None},
+            loading=True,
         )
-        self._tabulator.on_click(self._ingest_h5ad)
+        pn.state.onload(self._onload)
 
     @pn.cache
     def _load_datasets_catalog(self, census_version: str, uri: str, **soma_kwargs):
         with cellxgene_census.open_soma(census_version=census_version, uri=uri, **soma_kwargs) as census:
             return census["census_info"]["datasets"].read().concat().to_pandas()
+
+    def _onload(self):
+        try:
+            self.datasets_df = self._load_datasets_catalog(self.census_version, self.uri, **self.soma_kwargs)
+        except Exception as e:
+            pn.state.notifications.error(f"Failed to load datasets: {e}")
+            return
+        # Select only user-friendly columns for the main table
+        display_df = self.datasets_df[
+            [
+                "collection_name",
+                "dataset_title",
+                "dataset_total_cell_count",
+                "dataset_id",  # Keep this for row content lookup
+            ]
+        ]
+        self._tabulator.on_click(self._ingest_h5ad)
+        self._tabulator.param.update(
+            value=display_df,
+            loading=False,
+        )
 
     def _get_row_content(self, row):
         """
@@ -97,30 +103,21 @@ class CellXGeneSourceControls(SourceControls):
         full_info = self.datasets_df[self.datasets_df["dataset_id"] == dataset_id].iloc[0]
 
         # Build technical details HTML
-        html_content = f"""
-        <div>
-            <h4>📋 Technical Details</h4>
-            <div>
-                <h5>🔗 Identifiers & Links</h5>
-                <p><strong>Dataset ID:</strong> <code>{dataset_id}</code></p>
-                <p><strong>Dataset Version ID:</strong> <code>{full_info.get("dataset_version_id", "N/A")}</code></p>
-                <p><strong>Collection DOI:</strong>
-                   <a href="https://doi.org/{full_info.get("collection_doi", "")}" target="_blank">
-                   {full_info.get("collection_doi", "N/A")}
-                   </a>
-                </p>
-                <p><strong>Collection DOI Label:</strong> {full_info.get("collection_doi_label", "N/A")}</p>
-            </div>
-
-            <div>
-                <h5>📁 File Information</h5>
-                <p><strong>H5AD Path:</strong> <code>{full_info.get("dataset_h5ad_path", "N/A")}</code></p>
-                <p><strong>Total Cells:</strong> {full_info.get("dataset_total_cell_count", "N/A"):,}</p>
-            </div>
-        </div>
-        """
-
-        return pn.pane.HTML(html_content, sizing_mode="stretch_width")
+        lines = [
+            "Technical Details",
+            "",
+            "Identifiers & Links",
+            f"  Dataset ID: {dataset_id}",
+            f"  Dataset Version ID: {full_info.get('dataset_version_id', 'N/A')}",
+            f"  Collection DOI: {full_info.get('collection_doi', 'N/A')}",
+            f"  Collection DOI Label: {full_info.get('collection_doi_label', 'N/A')}",
+            "",
+            "File Information",
+            f"  H5AD Path: {full_info.get('dataset_h5ad_path', 'N/A')}",
+            f"  Total Cells: {full_info.get('dataset_total_cell_count', 'N/A'):,}",
+        ]
+        text_content = "\n".join(lines)
+        return pn.pane.Markdown(text_content, sizing_mode="stretch_width", styles={"color": "black"})
 
     async def _ingest_h5ad(self, event):
         """
@@ -129,6 +126,7 @@ class CellXGeneSourceControls(SourceControls):
         with self._tabulator.param.update(loading=True), self.param.update(disabled=True):
             await asyncio.sleep(0.05)  # yield the event loop to ensure UI updates
             dataset_id = self.datasets_df.loc[event.row, "dataset_id"]
+            dataset_title = self.datasets_df.loc[event.row, "dataset_title"]
             locator = cellxgene_census.get_source_h5ad_uri(dataset_id, census_version=self.census_version)
             # Initialize s3fs
             fs = s3fs.S3FileSystem(
@@ -144,11 +142,16 @@ class CellXGeneSourceControls(SourceControls):
                         break
                     buffer.write(chunk)
             buffer.seek(0)  # reset for reading
-            self.downloaded_files = {f"{dataset_id}.h5ad": buffer}
+            self.downloaded_files = {f"{dataset_title}.h5ad": buffer}
+            self.param.trigger("trigger_add")  # automatically trigger the add
 
     def __panel__(self):
         original_controls = super().__panel__()
         return pn.Column(
-            original_controls,
+            pn.pane.Markdown(
+                object="## CELLxGENE Census Source Input\n*Click on download icons to ingest datasets.",
+                margin=0,
+            ),
             self._tabulator,
+            original_controls,
         )
