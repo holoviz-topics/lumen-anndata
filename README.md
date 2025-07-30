@@ -6,17 +6,17 @@
 [![python-version](https://img.shields.io/pypi/pyversions/lumen-anndata?logoColor=white&logo=python&style=flat-square)](https://pypi.org/project/lumen-anndata)
 
 
-## ⚠️ Early Development Warning
 
-This project is in pre-alpha development stage and NOT READY for use.
-We are actively developing core functionality and the API may change significantly with each update.
+https://github.com/user-attachments/assets/836f0699-6379-4314-a861-7e3729d66f48
+
+
 
 ## Overview
 
 lumen-anndata is an extension to enable [Lumen](https://lumen.holoviz.org/) to interact with [anndata](https://anndata.readthedocs.io/) objects, a common format for single-cell genomics data. It aims to allow researchers to use natural language to explore, analyze, and visualize complex single-cell datasets through a chat interface.
 
-## Features (Planned)
-lumen-anndata aims to support the following capabilities:
+## Features
+lumen-anndata supports the following capabilities:
 
 - Natural language querying of anndata objects
 - Integration with select scanpy functions for running analysis and static plotting
@@ -37,6 +37,9 @@ To launch the Lumen app, run:
 ```bash
 lumen-anndata
 ```
+
+---
+---
 
 ## Development
 
