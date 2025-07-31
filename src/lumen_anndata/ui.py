@@ -2,9 +2,13 @@ from pathlib import Path
 
 import lumen.ai as lmai
 
+from lumen.ai.actor import Actor
+
 from lumen_anndata.analysis import LeidenComputation, ManifoldMapVisualization
 from lumen_anndata.controls import CellXGeneSourceControls
 from lumen_anndata.utils import upload_h5ad
+
+PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 INSTRUCTIONS = """
 You are an expert scientist working in Python, with a specialty using Anndata and Scanpy.
@@ -22,6 +26,8 @@ Prefer similar or equivalent matches in the context over standard assumptions.
 If you cannot find a match or give a confident answer, acknowledge it
 and suggest other relevant entries that might help the user.
 """
+
+Actor.prompts = {"main": {"template": PROMPTS_DIR / "Actor" / "main.jinja2"}}
 
 
 def build_ui():

@@ -1,0 +1,44 @@
+{%- block global %}
+{% if 'manifold_map_data' in memory %}
+Please note, the user selected a subset of the data in the manifold map visualization. Here are the summary statistics.
+{{ memory["manifold_map_data"] }}
+{% endif %}
+{%- endblock %}
+
+{%- block datetime %}
+The current date time is {{ current_datetime.strftime('%b %d, %Y %I:%M %p') }}
+{%- endblock %}
+
+{%- block instructions -%}
+{%- endblock -%}
+
+{%- block examples -%}
+{%- endblock -%}
+
+{% block tools -%}
+{%- if 'agent_tool_contexts' in memory and actor_name in memory["agent_tool_contexts"] %}
+{#- Agent-specific tool contexts -#}
+{% for key, value in memory["agent_tool_contexts"][actor_name].items() %}
+`{{ key }}`: {{ value }}
+{% endfor %}
+{% else %}
+{% endif -%}
+{%- endblock -%}
+
+{%- block context -%}
+{%- endblock %}
+
+{%- block errors -%}
+{%- if last_output is defined %}
+Note, your last output did not work as intended:
+```
+{{ last_output }}
+```
+{%- endif %}
+{%- if errors is defined and errors %}
+Your task is to expertly address these errors so they do not occur again:
+```
+{{ errors }}
+```
+{%- endif %}
+{%- endblock -%}
