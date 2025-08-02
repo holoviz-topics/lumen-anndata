@@ -2,7 +2,6 @@ import holoviews as hv
 
 from hv_anndata import ManifoldMap
 from lumen.ai.memory import memory
-from lumen.ai.utils import describe_data
 from lumen.views import View
 
 
@@ -19,6 +18,7 @@ class ManifoldMapPanel(View):
     def _stream_to_memory(self, event):
         x0, y0, x1, y1 = event.new
         source = self.pipeline.source
+        adata = source.get(self.pipeline.table, return_type="anndata")
         reduction = self._mmap.reduction
         obsm_pca = source.get(f"obsm_{reduction}")
         # The ManifoldMap index is 1-based, so we need to subtract 1 to get the correct index
@@ -29,5 +29,15 @@ class ManifoldMapPanel(View):
             (obsm_pca[f"{reduction}_{y_axis_num}"] > y0) & (obsm_pca[f"{reduction}_{y_axis_num}"] < y1)
         ].index
         obs_sub = source.get("obs").loc[obs_indices]
-        memory["manifold_map_data"] = describe_data(obs_sub)
+        new_source = source.create_sql_expr_source(
+            {"manifold_map_selected_obs": "SELECT * FROM obs"},  # placeholder...
+            adata=adata,
+            operations=source.operations,
+        )
+        # Register obs_sub as a new table in the DuckDB connection
+        new_source._register_tables({'manifold_map_selected_obs': obs_sub})
+        new_source.tables['manifold_map_selected_obs'] = 'SELECT * FROM manifold_map_selected_obs'
+        self.pipeline.source = new_source
+        memory["sources"] = memory.get("sources", []) + [new_source]  # todo: add method to memory
+        memory["source"] = new_source
         return obs_sub
