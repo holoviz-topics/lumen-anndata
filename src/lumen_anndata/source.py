@@ -97,6 +97,8 @@ class AnnDataSource(DuckDBSource):
         if connection:
             params['_connection'] = connection
         super().__init__(**params)
+        if self.tables is None:
+            self.tables = {}
 
         if self._adata_store and self.connection and initial_mirrors:
             self._register_tables(initial_mirrors)
@@ -148,6 +150,8 @@ class AnnDataSource(DuckDBSource):
             self.connection.register(table_name, df)
             if table_name not in self._materialized_tables:
                 self._materialized_tables.append(table_name)
+            if table_name not in self.tables:
+                self.tables[table_name] = f"SELECT * FROM {table_name}"
 
     def _prepare_adata(self, adata):
         """Prepare AnnData object from file path or AnnData instance."""
