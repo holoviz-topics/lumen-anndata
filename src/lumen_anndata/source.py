@@ -19,7 +19,6 @@ import param
 from anndata import AnnData
 from lumen.config import config
 from lumen.serializers import Serializer
-from lumen.sources.base import cached
 from lumen.sources.duckdb import DuckDBSource
 from lumen.transforms import SQLFilter
 from lumen.util import resolve_module_reference
@@ -103,10 +102,8 @@ class AnnDataSource(DuckDBSource):
         if self._adata_store and self.connection and initial_mirrors:
             self._register_tables(initial_mirrors)
 
-        if self.tables is None:
-            self.tables = {}
         self.tables.update({
-            table: table for table in self._component_registry.keys()
+            table: f"SELECT * FROM {table}" for table in self._component_registry.keys()
         })
         if not self.uploaded_filename:
             pn.state.on_session_destroyed(self._cleanup_temp_files)
@@ -588,7 +585,6 @@ class AnnDataSource(DuckDBSource):
             tables[t] = serializer.serialize(tdf)
         return tables
 
-    @cached
     def get(self, table: str, **query: Any) -> Union[pd.DataFrame, AnnData]:
         """Get data from AnnData as DataFrame or filtered AnnData object.
 
