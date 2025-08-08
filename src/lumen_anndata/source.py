@@ -20,7 +20,7 @@ from anndata import AnnData
 from lumen.config import config
 from lumen.serializers import Serializer
 from lumen.sources.duckdb import DuckDBSource
-from lumen.transforms import SQLFilter
+from lumen.transforms import SQLPreFilter
 from lumen.util import resolve_module_reference
 from sqlglot import parse_one
 from sqlglot.expressions import Table
@@ -542,15 +542,15 @@ class AnnDataSource(DuckDBSource):
             raise ValueError(f"Table '{table}' could not be prepared for SQL query.")
 
         conditions = self._build_sql_conditions(table, query)
-
         current_sql_expr = self.get_sql_expr(table)
         applied_transforms = sql_transforms
         if self.filter_in_sql and conditions:
-            applied_transforms = [SQLFilter(conditions=conditions)] + sql_transforms
+            applied_transforms = [SQLPreFilter(conditions=conditions)] + sql_transforms
 
         final_sql_expr = current_sql_expr
         for transform in applied_transforms:
             final_sql_expr = transform.apply(final_sql_expr)
+
         try:
             return self.execute(final_sql_expr)
         except Exception as e:
@@ -561,19 +561,17 @@ class AnnDataSource(DuckDBSource):
         """Build conditions for SQL filtering from selections and query."""
         conditions = []
 
-        if self._obs_ids_selected is not None and self._has_column_in_sql_table(table, "obs_id"):
+        if self._obs_ids_selected is not None:
             obs_ids = list(pd.Series(self._obs_ids_selected).unique().astype(str))
-            if obs_ids:
-                conditions.append(("obs_id", obs_ids))
+            conditions.append(("obs", [("obs_id", obs_ids)]))
 
-        if self._var_ids_selected is not None and self._has_column_in_sql_table(table, "var_id"):
+        if self._var_ids_selected is not None:
             var_ids = list(pd.Series(self._var_ids_selected).unique().astype(str))
-            if var_ids:
-                conditions.append(("var_id", var_ids))
+            conditions.append(("var", [("var_id", var_ids)]))
 
         for key, value in query.items():
             if self._has_column_in_sql_table(table, key) or table not in self._component_registry:
-                conditions.append((key, value))
+                conditions.append((table, (key, value)))
         return conditions
 
     def _serialize_tables(self) -> dict[str, Any]:

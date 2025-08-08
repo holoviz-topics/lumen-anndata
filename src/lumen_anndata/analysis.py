@@ -5,13 +5,11 @@ import param
 from holoviews import Dataset
 from hv_anndata.interface import ACCESSOR as A, register
 from lumen.ai.analysis import Analysis
-from lumen.ai.config import SOURCE_TABLE_SEPARATOR
-from lumen.ai.schemas import get_metaset
 from lumen.ai.utils import describe_data
 from lumen.filters import ConstantFilter
-from lumen_anndata.operations import LeidenOperation
-from panel import state
 from param.parameterized import bothmethod
+
+from lumen_anndata.operations import LeidenOperation
 
 from .source import AnnDataSource
 from .views import ManifoldMapPanel
@@ -55,15 +53,8 @@ class ManifoldMapVisualization(AnnDataAnalysis):
     async def _sync_selection(self, pipeline, event):
         if not self._initialized_selection:
             source = pipeline.source.create_sql_expr_source(pipeline.source.tables)
-            if 'sources' not in self._memory:
-                self._memory['sources'] = []
-            self._memory['sources'] += [source]
-            self._memory['source'] = [source]
+            self._memory['source'] = source
             self._memory['pipeline'] = selected = pipeline.clone(source=source)
-            table_slug = f'{source.name}{SOURCE_TABLE_SEPARATOR}obs'
-            # This should not be needed or should happen automatically
-            self._memory['visible_slugs'].add(table_slug)
-            self._memory['sql_metaset'] = await get_metaset({source.name: source}, [table_slug])
             filt = ConstantFilter(field='obs_id')
             selected.add_filter(filt)
             self._initialized_selection = True
