@@ -31,7 +31,7 @@ class ManifoldMapVisualization(AnnDataAnalysis):
     """
 
     def __call__(self, pipeline):
-        return ManifoldMapPanel(pipeline=pipeline)
+        return ManifoldMapPanel(pipeline=pipeline, memory=self._memory)
 
 
 class LeidenComputation(AnnDataAnalysis):
