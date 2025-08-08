@@ -42,6 +42,7 @@ class ManifoldMapPanel(View):
         new_source._obs_ids_selected = obs_ids
         self._memory["sources"] = self._memory.get("sources", []) + [new_source]
         self._memory["source"] = new_source
+        self._memory.trigger("sources")
 
     def to_spec(self, context: dict | None = None) -> dict:
         spec = super().to_spec()
