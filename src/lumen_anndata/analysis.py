@@ -1,7 +1,11 @@
+from functools import partial
+
 import param
 
+from holoviews import Dataset
+from hv_anndata.interface import ACCESSOR as A
 from lumen.ai.analysis import Analysis
-
+from lumen.filters import ConstantFilter
 from lumen_anndata.operations import LeidenOperation
 
 from .source import AnnDataSource
@@ -30,8 +34,28 @@ class ManifoldMapVisualization(AnnDataAnalysis):
     unless explicitly otherwise specified by the user.
     """
 
+    selection = param.Parameter()
+
     def __call__(self, pipeline):
-        return ManifoldMapPanel(pipeline=pipeline, memory=self._memory)
+        source = pipeline.source.create_sql_expr_source(pipeline.source.tables)
+        if 'sources' not in self._memory:
+            self._memory['sources'] = []
+        self._memory['sources'] += [source]
+        self._memory['source'] = [source]
+        self._memory['pipeline'] = selected = pipeline.clone(source=source)
+        filt = ConstantFilter(field='obs_id')
+        selected.add_filter(filt)
+        mm = ManifoldMapPanel(pipeline=pipeline)
+        mm.param.watch(partial(self._sync_selection, pipeline, filt), 'selection_expr')
+        return mm
+
+    def _sync_selection(self, pipeline, obs_filter, event):
+        adata = pipeline.source.get('obs', return_type='anndata')
+        dr_options = list(adata.obsm.keys())
+        var = dr_options[0]
+        ds = Dataset(adata, [A.obsm[var][:, 0], A.obsm[var][:, 1]])
+        mask = event.new.apply(ds)
+        obs_filter.value = list(pipeline.data[mask].obs_id)
 
 
 class LeidenComputation(AnnDataAnalysis):
