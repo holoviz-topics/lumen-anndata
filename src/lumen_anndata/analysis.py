@@ -3,13 +3,20 @@ from functools import partial
 import param
 
 from holoviews import Dataset
-from hv_anndata.interface import ACCESSOR as A
+from hv_anndata.interface import ACCESSOR as A, register
 from lumen.ai.analysis import Analysis
+from lumen.ai.config import SOURCE_TABLE_SEPARATOR
+from lumen.ai.schemas import get_metaset
+from lumen.ai.utils import describe_data
 from lumen.filters import ConstantFilter
 from lumen_anndata.operations import LeidenOperation
+from panel import state
+from param.parameterized import bothmethod
 
 from .source import AnnDataSource
 from .views import ManifoldMapPanel
+
+register()
 
 
 class AnnDataAnalysis(Analysis):
@@ -34,28 +41,41 @@ class ManifoldMapVisualization(AnnDataAnalysis):
     unless explicitly otherwise specified by the user.
     """
 
-    selection = param.Parameter()
+    @bothmethod
+    def instance(self_or_cls, **params):
+        instance = super().instance(**params)
+        instance._initialized_selection = False
+        return instance
 
     def __call__(self, pipeline):
-        source = pipeline.source.create_sql_expr_source(pipeline.source.tables)
-        if 'sources' not in self._memory:
-            self._memory['sources'] = []
-        self._memory['sources'] += [source]
-        self._memory['source'] = [source]
-        self._memory['pipeline'] = selected = pipeline.clone(source=source)
-        filt = ConstantFilter(field='obs_id')
-        selected.add_filter(filt)
         mm = ManifoldMapPanel(pipeline=pipeline)
-        mm.param.watch(partial(self._sync_selection, pipeline, filt), 'selection_expr')
+        mm.param.watch(partial(self._sync_selection, pipeline), 'selection_expr')
         return mm
 
-    def _sync_selection(self, pipeline, obs_filter, event):
+    async def _sync_selection(self, pipeline, event):
+        if not self._initialized_selection:
+            source = pipeline.source.create_sql_expr_source(pipeline.source.tables)
+            if 'sources' not in self._memory:
+                self._memory['sources'] = []
+            self._memory['sources'] += [source]
+            self._memory['source'] = [source]
+            self._memory['pipeline'] = selected = pipeline.clone(source=source)
+            table_slug = f'{source.name}{SOURCE_TABLE_SEPARATOR}obs'
+            # This should not be needed or should happen automatically
+            self._memory['visible_slugs'].add(table_slug)
+            self._memory['sql_metaset'] = await get_metaset({source.name: source}, [table_slug])
+            filt = ConstantFilter(field='obs_id')
+            selected.add_filter(filt)
+            self._initialized_selection = True
+        else:
+            source = self._memory['source']
         adata = pipeline.source.get('obs', return_type='anndata')
         dr_options = list(adata.obsm.keys())
         var = dr_options[0]
         ds = Dataset(adata, [A.obsm[var][:, 0], A.obsm[var][:, 1]])
         mask = event.new.apply(ds)
-        obs_filter.value = list(pipeline.data[mask].obs_id)
+        source._obs_ids_selected = filt.value = list(pipeline.data[mask].obs_id)
+        self._memory["data"] = await describe_data(pipeline.data[mask])
 
 
 class LeidenComputation(AnnDataAnalysis):
