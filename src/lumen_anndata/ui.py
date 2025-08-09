@@ -6,6 +6,8 @@ from lumen_anndata.analysis import LeidenComputation, ManifoldMapVisualization
 from lumen_anndata.controls import CellXGeneSourceControls
 from lumen_anndata.utils import upload_h5ad
 
+PROMPTS_DIR = Path(__file__).parent / "prompts"
+
 INSTRUCTIONS = """
 You are an expert scientist working in Python, with a specialty using Anndata and Scanpy.
 All of your answers must be grounded in the provided embedding context by citing specific entries where applicable.

@@ -1,11 +1,20 @@
+from functools import partial
+
 import param
 
+from holoviews import Dataset
+from hv_anndata.interface import ACCESSOR as A, register
 from lumen.ai.analysis import Analysis
+from lumen.ai.utils import describe_data
+from lumen.filters import ConstantFilter
+from param.parameterized import bothmethod
 
 from lumen_anndata.operations import LeidenOperation
 
 from .source import AnnDataSource
 from .views import ManifoldMapPanel
+
+register()
 
 
 class AnnDataAnalysis(Analysis):
@@ -30,8 +39,34 @@ class ManifoldMapVisualization(AnnDataAnalysis):
     unless explicitly otherwise specified by the user.
     """
 
+    @bothmethod
+    def instance(self_or_cls, **params):
+        instance = super().instance(**params)
+        instance._initialized_selection = False
+        return instance
+
     def __call__(self, pipeline):
-        return ManifoldMapPanel(pipeline=pipeline)
+        mm = ManifoldMapPanel(pipeline=pipeline)
+        mm.param.watch(partial(self._sync_selection, pipeline), 'selection_expr')
+        return mm
+
+    async def _sync_selection(self, pipeline, event):
+        if not self._initialized_selection:
+            source = pipeline.source.create_sql_expr_source(pipeline.source.tables)
+            self._memory['source'] = source
+            self._memory['pipeline'] = selected = pipeline.clone(source=source)
+            filt = ConstantFilter(field='obs_id')
+            selected.add_filter(filt)
+            self._initialized_selection = True
+        else:
+            source = self._memory['source']
+        adata = pipeline.source.get('obs', return_type='anndata')
+        dr_options = list(adata.obsm.keys())
+        var = dr_options[0]
+        ds = Dataset(adata, [A.obsm[var][:, 0], A.obsm[var][:, 1]])
+        mask = event.new.apply(ds)
+        source._obs_ids_selected = filt.value = list(pipeline.data[mask].obs_id)
+        self._memory["data"] = await describe_data(pipeline.data[mask])
 
 
 class LeidenComputation(AnnDataAnalysis):
