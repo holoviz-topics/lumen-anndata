@@ -2,7 +2,6 @@ import holoviews as hv
 import param
 
 from hv_anndata import ManifoldMap
-from lumen.ai.memory import _Memory, memory
 from lumen.views import View
 
 
