@@ -552,7 +552,12 @@ class AnnDataSource(DuckDBSource):
             final_sql_expr = transform.apply(final_sql_expr)
 
         try:
-            return self.execute(final_sql_expr)
+            df = self.execute(final_sql_expr)
+            if 'obs_id' in df.columns and not any(col == 'obs_id' for col, _ in conditions) and self._obs_ids_selected is not None:
+                df = df[df.obs_id.isin(list(pd.Series(self._obs_ids_selected).unique().astype(str)))]
+            elif 'var_id' in df.columns and not any(col == 'var_id' for col, _ in conditions) and self._var_ids_selected is not None:
+                df = df[df.var_id.isin(list(pd.Series(self._var_ids_selected).unique().astype(str)))]
+            return df
         except Exception as e:
             self.param.warning(f"SQL execution failed: {e}")
             return pd.DataFrame()
