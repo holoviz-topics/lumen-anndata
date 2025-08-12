@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import param
 import pytest
+import scanpy as sc
 import scipy.sparse as sp
 
 from lumen_anndata.operations import AnnDataOperation
@@ -478,17 +479,11 @@ def test_create_sql_expr_source(fixed_sample_anndata):
     assert all(b_cells["cell_type"] == "B")
 
     count_by_type = multi_source.get("count_by_type")
-    assert len(count_by_type) == 3  # There are 3 cell types (B, T, NK)
+    assert len(count_by_type) == 1  # There are 3 cell types (B, T, NK), but we persist _obs_selected_ids
 
     # Check that correct counts are present
     b_count = count_by_type[count_by_type["cell_type"] == "B"]["count"].iloc[0]
     assert b_count == 2
-
-    t_count = count_by_type[count_by_type["cell_type"] == "T"]["count"].iloc[0]
-    assert t_count == 1
-
-    nk_count = count_by_type[count_by_type["cell_type"] == "NK"]["count"].iloc[0]
-    assert nk_count == 1
 
     # Test that the tables are actually materialized
     all_tables = [item[0] for item in multi_source._connection.execute("SHOW TABLES").fetchall()]
@@ -519,3 +514,15 @@ def test_operation_persisted(fixed_sample_anndata):
 
     assert "operations" in new_source.to_spec()
     assert AnnDataSource.from_spec(new_source.to_spec()).get("obs", return_type="anndata").obs["test_42"].tolist()[0] == "test_value"
+
+
+def test_obs_sub():
+    adata = sc.datasets.pbmc68k_reduced()
+    source = AnnDataSource(adata=adata)
+    assert len(source.get('obs')) > 2
+
+    source._obs_ids_selected = ["AAAGCCTGGCTAAC-1", "TTGAGGTGGAGAGC-8"]
+    source._var_ids_selected = ["a"]
+    assert len(source.get("obs")) == 2
+
+    assert len(source.create_sql_expr_source({"obs_sub": "select n_genes from obs limit 5"}).get("obs_sub")) == 2

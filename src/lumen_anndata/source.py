@@ -19,9 +19,8 @@ import param
 from anndata import AnnData
 from lumen.config import config
 from lumen.serializers import Serializer
-from lumen.sources.base import cached
 from lumen.sources.duckdb import DuckDBSource
-from lumen.transforms import SQLFilter
+from lumen.transforms import SQLFilter, SQLPreFilter
 from lumen.util import resolve_module_reference
 from sqlglot import parse_one
 from sqlglot.expressions import Table
@@ -97,14 +96,14 @@ class AnnDataSource(DuckDBSource):
         if connection:
             params['_connection'] = connection
         super().__init__(**params)
+        if self.tables is None:
+            self.tables = {}
 
         if self._adata_store and self.connection and initial_mirrors:
             self._register_tables(initial_mirrors)
 
-        if self.tables is None:
-            self.tables = {}
         self.tables.update({
-            table: table for table in self._component_registry.keys()
+            table: f"SELECT * FROM {table}" for table in self._component_registry.keys()
         })
         if not self.uploaded_filename:
             pn.state.on_session_destroyed(self._cleanup_temp_files)
@@ -148,6 +147,8 @@ class AnnDataSource(DuckDBSource):
             self.connection.register(table_name, df)
             if table_name not in self._materialized_tables:
                 self._materialized_tables.append(table_name)
+            if table_name not in self.tables:
+                self.tables[table_name] = f"SELECT * FROM {table_name}"
 
     def _prepare_adata(self, adata):
         """Prepare AnnData object from file path or AnnData instance."""
@@ -540,40 +541,53 @@ class AnnDataSource(DuckDBSource):
         if table not in self._materialized_tables and table not in self.get_tables():
             raise ValueError(f"Table '{table}' could not be prepared for SQL query.")
 
-        conditions = self._build_sql_conditions(table, query)
-
+        extra_transforms = self._build_sql_transforms(table, query)
         current_sql_expr = self.get_sql_expr(table)
         applied_transforms = sql_transforms
-        if self.filter_in_sql and conditions:
-            applied_transforms = [SQLFilter(conditions=conditions)] + sql_transforms
+        if self.filter_in_sql and extra_transforms:
+            applied_transforms = extra_transforms + sql_transforms
 
         final_sql_expr = current_sql_expr
         for transform in applied_transforms:
             final_sql_expr = transform.apply(final_sql_expr)
+
         try:
-            return self.execute(final_sql_expr)
+            df = self.execute(final_sql_expr)
+            return df
         except Exception as e:
             self.param.warning(f"SQL execution failed: {e}")
             return pd.DataFrame()
 
-    def _build_sql_conditions(self, table: str, query: dict) -> list:
-        """Build conditions for SQL filtering from selections and query."""
-        conditions = []
+    def _build_sql_transforms(self, table: str, query: dict) -> list:
+        """Build transforms for SQL filtering from selections and query."""
+        transforms = []
 
-        if self._obs_ids_selected is not None and self._has_column_in_sql_table(table, "obs_id"):
+        # Apply obs ID selections to tables
+        if self._obs_ids_selected is not None:
             obs_ids = list(pd.Series(self._obs_ids_selected).unique().astype(str))
-            if obs_ids:
-                conditions.append(("obs_id", obs_ids))
+            if self._has_column_in_sql_table(table, "obs_id"):
+                transforms.append(SQLFilter(conditions=[("obs_id", obs_ids)]))
+            elif table != "var":
+                transforms.append(SQLPreFilter(conditions=[("obs", [("obs_id", obs_ids)])]))
 
-        if self._var_ids_selected is not None and self._has_column_in_sql_table(table, "var_id"):
+        # Apply var ID selections to tables
+        if self._var_ids_selected is not None:
             var_ids = list(pd.Series(self._var_ids_selected).unique().astype(str))
-            if var_ids:
-                conditions.append(("var_id", var_ids))
+            if self._has_column_in_sql_table(table, "var_id"):
+                transforms.append(SQLFilter(conditions=[("var_id", var_ids)]))
+            elif table != "obs":
+                transforms.append(SQLPreFilter(conditions=[("var", [("var_id", var_ids)])]))
 
+        # Group query conditions by table
+        table_conditions = []
         for key, value in query.items():
             if self._has_column_in_sql_table(table, key) or table not in self._component_registry:
-                conditions.append((key, value))
-        return conditions
+                table_conditions.append((key, value))
+
+        if table_conditions:
+            transforms.append(SQLFilter(conditions=table_conditions))
+
+        return transforms
 
     def _serialize_tables(self) -> dict[str, Any]:
         """Serialize the tables for storage or transmission."""
@@ -584,7 +598,6 @@ class AnnDataSource(DuckDBSource):
             tables[t] = serializer.serialize(tdf)
         return tables
 
-    @cached
     def get(self, table: str, **query: Any) -> Union[pd.DataFrame, AnnData]:
         """Get data from AnnData as DataFrame or filtered AnnData object.
 
