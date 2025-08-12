@@ -562,17 +562,37 @@ class AnnDataSource(DuckDBSource):
         """Build conditions for SQL filtering from selections and query."""
         conditions = []
 
-        if self._obs_ids_selected is not None:
+        # Apply obs ID selections to tables
+        if self._obs_ids_selected is not None and table != "var":
             obs_ids = list(pd.Series(self._obs_ids_selected).unique().astype(str))
-            conditions.append(("obs", [("obs_id", obs_ids)]))
+            conditions.append((table, [("obs_id", obs_ids)]))
 
-        if self._var_ids_selected is not None:
+        # Apply var ID selections to tables
+        if self._var_ids_selected is not None and table != "obs":
             var_ids = list(pd.Series(self._var_ids_selected).unique().astype(str))
-            conditions.append(("var", [("var_id", var_ids)]))
+            conditions.append((table, [("var_id", var_ids)]))
 
+        # Group query conditions by table
+        table_conditions = []
         for key, value in query.items():
             if self._has_column_in_sql_table(table, key) or table not in self._component_registry:
-                conditions.append((table, (key, value)))
+                table_conditions.append((key, value))
+
+        if table_conditions:
+            # If we already have ID conditions for this table, merge them
+            existing_table_condition = None
+            for i, (cond_table, _) in enumerate(conditions):
+                if cond_table == table:
+                    existing_table_condition = i
+                    break
+
+            if existing_table_condition is not None:
+                # Extend existing conditions for this table
+                conditions[existing_table_condition] = (table, conditions[existing_table_condition][1] + table_conditions)
+            else:
+                # Add new conditions for this table
+                conditions.append((table, table_conditions))
+
         return conditions
 
     def _serialize_tables(self) -> dict[str, Any]:
