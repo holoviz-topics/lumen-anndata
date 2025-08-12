@@ -20,7 +20,7 @@ from anndata import AnnData
 from lumen.config import config
 from lumen.serializers import Serializer
 from lumen.sources.duckdb import DuckDBSource
-from lumen.transforms import SQLPreFilter
+from lumen.transforms import SQLFilter, SQLPreFilter
 from lumen.util import resolve_module_reference
 from sqlglot import parse_one
 from sqlglot.expressions import Table
@@ -541,11 +541,11 @@ class AnnDataSource(DuckDBSource):
         if table not in self._materialized_tables and table not in self.get_tables():
             raise ValueError(f"Table '{table}' could not be prepared for SQL query.")
 
-        conditions = self._build_sql_conditions(table, query)
+        extra_transforms = self._build_sql_transforms(table, query)
         current_sql_expr = self.get_sql_expr(table)
         applied_transforms = sql_transforms
-        if self.filter_in_sql and conditions:
-            applied_transforms = [SQLPreFilter(conditions=conditions)] + sql_transforms
+        if self.filter_in_sql and extra_transforms:
+            applied_transforms = extra_transforms + sql_transforms
 
         final_sql_expr = current_sql_expr
         for transform in applied_transforms:
@@ -558,19 +558,25 @@ class AnnDataSource(DuckDBSource):
             self.param.warning(f"SQL execution failed: {e}")
             return pd.DataFrame()
 
-    def _build_sql_conditions(self, table: str, query: dict) -> list:
-        """Build conditions for SQL filtering from selections and query."""
-        conditions = []
+    def _build_sql_transforms(self, table: str, query: dict) -> list:
+        """Build transforms for SQL filtering from selections and query."""
+        transforms = []
 
         # Apply obs ID selections to tables
-        if self._obs_ids_selected is not None and table != "var":
+        if self._obs_ids_selected is not None:
             obs_ids = list(pd.Series(self._obs_ids_selected).unique().astype(str))
-            conditions.append((table, [("obs_id", obs_ids)]))
+            if self._has_column_in_sql_table(table, "obs_id"):
+                transforms.append(SQLFilter(conditions=[("obs_id", obs_ids)]))
+            elif table != "var":
+                transforms.append(SQLPreFilter(conditions=[("obs", [("obs_id", obs_ids)])]))
 
         # Apply var ID selections to tables
-        if self._var_ids_selected is not None and table != "obs":
+        if self._var_ids_selected is not None:
             var_ids = list(pd.Series(self._var_ids_selected).unique().astype(str))
-            conditions.append((table, [("var_id", var_ids)]))
+            if self._has_column_in_sql_table(table, "var_id"):
+                transforms.append(SQLFilter(conditions=[("var_id", var_ids)]))
+            elif table != "obs":
+                transforms.append(SQLPreFilter(conditions=[("var", [("var_id", var_ids)])]))
 
         # Group query conditions by table
         table_conditions = []
@@ -579,21 +585,9 @@ class AnnDataSource(DuckDBSource):
                 table_conditions.append((key, value))
 
         if table_conditions:
-            # If we already have ID conditions for this table, merge them
-            existing_table_condition = None
-            for i, (cond_table, _) in enumerate(conditions):
-                if cond_table == table:
-                    existing_table_condition = i
-                    break
+            transforms.append(SQLFilter(conditions=table_conditions))
 
-            if existing_table_condition is not None:
-                # Extend existing conditions for this table
-                conditions[existing_table_condition] = (table, conditions[existing_table_condition][1] + table_conditions)
-            else:
-                # Add new conditions for this table
-                conditions.append((table, table_conditions))
-
-        return conditions
+        return transforms
 
     def _serialize_tables(self) -> dict[str, Any]:
         """Serialize the tables for storage or transmission."""
