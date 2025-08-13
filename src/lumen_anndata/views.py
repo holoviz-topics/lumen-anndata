@@ -6,7 +6,7 @@ import panel as pn
 from holoviews.operation import dendrogram
 from hv_anndata import ManifoldMap
 from lumen.views import View
-from panel_material_ui import MultiChoice
+from panel_material_ui import Checkbox, IntSlider, MultiChoice
 
 
 class ManifoldMapPanel(View):
@@ -40,14 +40,14 @@ class ClustermapPanel(View):
             height=200,
         )
 
-        max_cells_input = pn.widgets.IntSlider(name="Max cells", start=10, end=min(1000, len(obs_names)), value=min(100, len(obs_names)), step=10)
+        max_cells_input = IntSlider(name="Max cells", start=10, end=min(1000, len(obs_names)), value=min(100, len(obs_names)), step=10)
 
         # Additional options
-        use_raw_input = pn.widgets.Checkbox(name="Use raw data", value=False)
+        use_raw_input = Checkbox(name="Use raw data", value=False)
 
-        cluster_genes_input = pn.widgets.Checkbox(name="Cluster genes", value=True)
+        cluster_genes_input = Checkbox(name="Cluster genes", value=True)
 
-        cluster_cells_input = pn.widgets.Checkbox(name="Cluster cells", value=True)
+        cluster_cells_input = Checkbox(name="Cluster cells", value=True)
 
         # Create layout with widgets and bound plot
         controls = pn.Column(genes_input, max_cells_input, use_raw_input, cluster_genes_input, cluster_cells_input, width=300)
@@ -100,15 +100,14 @@ class ClustermapPanel(View):
         # Prepare data for HoloViews HeatMap (convert to long format)
         heatmap_df = expr_df.stack().reset_index()
         heatmap_df.columns = ["cell", "gene", "expression"]
-
         heatmap = hv.HeatMap(heatmap_df, ["gene", "cell"], "expression").opts(
             colorbar=True,
             title="Hierarchical Clustering Heatmap",
             xrotation=90,
             fontsize={"labels": 8, "title": 12},
-            # responsive=True,  # the dendrograms are not responsive, so we set fixed size
             width=500, height=500,
             tools=["hover"],
+            yticks=[np.nan]
         )
 
         adjoint_dims = []
