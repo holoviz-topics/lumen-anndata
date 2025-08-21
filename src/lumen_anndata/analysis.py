@@ -7,6 +7,9 @@ from hv_anndata.interface import ACCESSOR as A, register
 from lumen.ai.analysis import Analysis
 from lumen.ai.utils import describe_data
 from lumen.filters import ConstantFilter
+from panel.layout import Column
+from panel.pane.markup import Markdown
+from panel_material_ui import Button
 from param.parameterized import bothmethod
 
 from lumen_anndata.operations import LeidenOperation
@@ -43,30 +46,58 @@ class ManifoldMapVisualization(AnnDataAnalysis):
     def instance(self_or_cls, **params):
         instance = super().instance(**params)
         instance._initialized_selection = False
+        instance._chat_message = None
+        instance._filt = None
+        instance._reset_col = None
         return instance
 
     def __call__(self, pipeline):
-        mm = ManifoldMapPanel(pipeline=pipeline)
-        mm.param.watch(partial(self._sync_selection, pipeline), 'selection_expr')
-        return mm
+        self._mm = ManifoldMapPanel(pipeline=pipeline)
+        self._mm.param.watch(partial(self._sync_selection, pipeline), 'selection_expr')
+        return self._mm
+
+    def _reset_selection(self, event):
+        source = self._memory['source']
+        source._obs_ids_selected = None
+        self._mm.selection_expr = None
+        self._mm._ls.selection_expr = None
+        self._initialized_selection = False
+        self._chat_message = self.interface.stream(
+            "Selection was reset.", user="Assistant", message=self._chat_message
+        )
 
     async def _sync_selection(self, pipeline, event):
+        if event.new is None:
+            return
+
         if not self._initialized_selection:
             source = pipeline.source.create_sql_expr_source(pipeline.source.tables)
             self._memory['source'] = source
             self._memory['pipeline'] = selected = pipeline.clone(source=source)
-            filt = ConstantFilter(field='obs_id')
-            selected.add_filter(filt)
+            self._filt = ConstantFilter(field='obs_id')
+            selected.add_filter(self._filt)
+            button = Button(
+                label="Reset Selection",
+                on_click=self._reset_selection
+            )
+            self._selection_content = Markdown()
+            self._reset_col = Column(self._selection_content, button)
             self._initialized_selection = True
         else:
             source = self._memory['source']
+
         adata = pipeline.source.get('obs', return_type='anndata')
         dr_options = list(adata.obsm.keys())
         var = dr_options[0]
         ds = Dataset(adata, [A.obsm[var][:, 0], A.obsm[var][:, 1]])
         mask = event.new.apply(ds)
-        source._obs_ids_selected = filt.value = list(pipeline.data[mask].obs_id)
+        source._obs_ids_selected = self._filt.value = list(pipeline.data[mask].obs_id)
+        self._selection_content = (
+            f"Selected {len(source._obs_ids_selected)} points, "
+            "which will be used for subsequent calls."
+        )
         self._memory["data"] = await describe_data(pipeline.data[mask])
+        self._chat_message = self.interface.stream(self._reset_col, user="Assistant", message=self._chat_message)
 
 
 class LeidenComputation(AnnDataAnalysis):
