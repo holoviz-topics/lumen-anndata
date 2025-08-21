@@ -62,9 +62,6 @@ class ManifoldMapVisualization(AnnDataAnalysis):
         self._mm.selection_expr = None
         self._mm._ls.selection_expr = None
         self._initialized_selection = False
-        self._chat_message = self.interface.stream(
-            "Selection was reset.", user="Assistant", message=self._chat_message
-        )
 
     async def _sync_selection(self, pipeline, event):
         if event.new is None:
@@ -80,8 +77,8 @@ class ManifoldMapVisualization(AnnDataAnalysis):
                 label="Reset Selection",
                 on_click=self._reset_selection
             )
-            self._selection_content = Markdown()
-            self._reset_col = Column(self._selection_content, button)
+            self._selection_markdown = Markdown()
+            self._reset_col = Column(self._selection_markdown, button)
             self._initialized_selection = True
         else:
             source = self._memory['source']
@@ -92,7 +89,7 @@ class ManifoldMapVisualization(AnnDataAnalysis):
         ds = Dataset(adata, [A.obsm[var][:, 0], A.obsm[var][:, 1]])
         mask = event.new.apply(ds)
         source._obs_ids_selected = self._filt.value = list(pipeline.data[mask].obs_id)
-        self._selection_content = (
+        self._selection_markdown.object = (
             f"Selected {len(source._obs_ids_selected)} points, "
             "which will be used for subsequent calls."
         )
