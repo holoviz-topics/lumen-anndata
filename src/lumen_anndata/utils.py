@@ -14,9 +14,11 @@ def upload_h5ad(file: BytesIO, table: str, filename: str) -> int:
     adata = ad.read_h5ad(file)
     try:
         src = AnnDataSource(adata=adata, uploaded_filename=filename)
-        if "filenames" not in src.info:
-            src.info["filenames"] = []
-        src.info["filenames"].append(filename)
+        for table in src.get_tables():
+            if table not in src.metadata:
+                src.metadata[table] = {}
+            if "filename" not in src.metadata[table]:
+                src.metadata[table]["filename"] = filename
         memory["source"] = src
         return 1
     except Exception as e:
