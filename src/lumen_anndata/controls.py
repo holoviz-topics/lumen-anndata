@@ -24,6 +24,11 @@ class CellXGeneSourceControls(SourceControls):
 
     uri = param.String(default=None, doc="Base URI for CELLxGENE Census")
 
+    status = param.String(
+        default="*Click on download icons to ingest datasets.*",
+        doc="Message displayed in the UI",
+    )
+
     soma_kwargs = param.Dict(default={}, doc="Additional parameters for soma connection")
 
     def __init__(self, **params):
@@ -71,6 +76,7 @@ class CellXGeneSourceControls(SourceControls):
             self.datasets_df = self._load_datasets_catalog(self.census_version, self.uri, **self.soma_kwargs)
         except Exception as e:
             pn.state.notifications.error(f"Failed to load datasets: {e}")
+            self.status = "Failed to load datasets. Please check your connection or parameters."
             return
         # Select only user-friendly columns for the main table
         display_df = self.datasets_df[
@@ -86,6 +92,7 @@ class CellXGeneSourceControls(SourceControls):
             value=display_df,
             loading=False,
         )
+        # self._czi_controls.loading = False
 
     def _get_row_content(self, row):
         """
@@ -144,14 +151,16 @@ class CellXGeneSourceControls(SourceControls):
             buffer.seek(0)  # reset for reading
             self.downloaded_files = {f"{dataset_title}.h5ad": buffer}
             self.param.trigger("trigger_add")  # automatically trigger the add
+            self.status = f"Dataset '{dataset_title}' has been added successfully."
 
     def __panel__(self):
-        czi_controls = pn.Column(
+        self._czi_controls = pn.Column(
             pn.pane.Markdown(
                 object="*Click on download icons to ingest datasets.*",
                 margin=0,
             ),
             self._tabulator,
+            loading=True
         )
         original_controls = super().__panel__()
         # Append to input tabs; add check to prevent duplicate
