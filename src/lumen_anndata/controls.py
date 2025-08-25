@@ -165,6 +165,11 @@ class CellXGeneSourceControls(SourceControls):
         original_controls = super().__panel__()
         # Append to input tabs; add check to prevent duplicate
         if len(original_controls[0]) == 2:
-            original_controls[0].append(("CELLxGENE Census Datasets", czi_controls))
+        # Append to input tabs; add check to prevent duplicate
+        if len(original_controls[0]) == 2:
+            original_controls[0].append(("CELLxGENE Census Datasets", self._czi_controls))
+            original_controls[0].active = len(original_controls[0]) - 1
+        return original_controls
+
             original_controls[0].active = len(original_controls[0]) - 1
         return original_controls
