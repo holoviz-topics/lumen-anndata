@@ -112,7 +112,7 @@ class ClustermapVisualization(AnnDataAnalysis):
             return pipeline
 
         self.message = (
-            f"HeatmapDendrogram view ready with {len(adata.obs.columns)} grouping options "
+            f"ClustermapVisualization view ready with {len(adata.obs.columns)} grouping options "
             f"and {len(adata.var.index)} genes available."
         )
 
