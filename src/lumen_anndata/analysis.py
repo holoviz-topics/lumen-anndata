@@ -15,7 +15,7 @@ from param.parameterized import bothmethod
 from lumen_anndata.operations import LeidenOperation
 
 from .source import AnnDataSource
-from .views import ManifoldMapPanel
+from .views import ManifoldMapPanel, RankGenesGroupsTracksplotPanel
 
 register()
 
@@ -151,7 +151,26 @@ class LeidenComputation(AnnDataAnalysis):
             operations=source.operations + [leiden_operation],
         )
         self.message = (
-            f"Leiden clustering completed with resolution {self.resolution} "
-            f"and stored in `adata.obs['{self.key_added.format(resolution=self.resolution)}']`."
+            f"Leiden clustering completed with resolution {self.resolution} and stored in `adata.obs['{self.key_added.format(resolution=self.resolution)}']`."
         )
         return pipeline
+
+
+class RankGenesGroupsTracksplot(LeidenComputation):
+    """Create a tracksplot visualization of top differentially expressed genes from rank_genes_groups analysis."""
+
+    n_genes = param.Integer(
+        default=3,
+        bounds=(1, None),
+        doc="""
+        Number of top genes to display in the tracksplot.""",
+    )
+
+    def __call__(self, pipeline):
+        pipeline = super().__call__(pipeline)
+
+        source = pipeline.source
+        adata = source.get(pipeline.table, return_type="anndata")
+
+        self.message = f"RankGenesGroupsTracksplot view ready with {len(adata.obs.columns)} grouping options and {len(adata.var.index)} genes available."
+        return RankGenesGroupsTracksplotPanel(key_added=self.key_added.format(resolution=self.resolution), n_genes=self.n_genes, pipeline=pipeline)
