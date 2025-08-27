@@ -27,6 +27,8 @@ class AnnDataAnalysis(Analysis):
     to an AnnDataSource.
     """
 
+    solve_dependencies = param.Boolean()
+
     @classmethod
     async def applies(cls, pipeline) -> bool:
         source = pipeline.source
@@ -156,8 +158,10 @@ class LeidenComputation(AnnDataAnalysis):
         return pipeline
 
 
-class RankGenesGroupsTracksplot(LeidenComputation):
+class RankGenesGroupsTracksplot(AnnDataAnalysis):
     """Create a tracksplot visualization of top differentially expressed genes from rank_genes_groups analysis."""
+
+    groupby = param.Selector(default=None, objects=[], doc="Groupby category for the analysis.")
 
     n_genes = param.Integer(
         default=3,
@@ -167,10 +171,11 @@ class RankGenesGroupsTracksplot(LeidenComputation):
     )
 
     def __call__(self, pipeline):
-        pipeline = super().__call__(pipeline)
-
-        source = pipeline.source
-        adata = source.get(pipeline.table, return_type="anndata")
-
-        self.message = f"RankGenesGroupsTracksplot view ready with {len(adata.obs.columns)} grouping options and {len(adata.var.index)} genes available."
-        return RankGenesGroupsTracksplotPanel(key_added=self.key_added.format(resolution=self.resolution), n_genes=self.n_genes, pipeline=pipeline)
+        if not self.param.groupby.objects:
+            source = pipeline.source
+            adata = source.get(pipeline.table, return_type="anndata")
+            available_cols = list(adata.obs.columns)
+            self.param.groupby.objects = available_cols
+        if not self.groupby:
+            self.groupby = available_cols[0]
+        return RankGenesGroupsTracksplotPanel(pipeline=pipeline, groupby=self.groupby, n_genes=self.n_genes, solve_dependencies=self.solve_dependencies)
