@@ -15,7 +15,7 @@ from param.parameterized import bothmethod
 from lumen_anndata.operations import LeidenOperation
 
 from .source import AnnDataSource
-from .views import ManifoldMapPanel
+from .views import ManifoldMapPanel, RankGenesGroupsTracksplotPanel
 
 register()
 
@@ -26,6 +26,8 @@ class AnnDataAnalysis(Analysis):
     This class is used to ensure that the analysis can be applied
     to an AnnDataSource.
     """
+
+    solve_dependencies = param.Boolean()
 
     @classmethod
     async def applies(cls, pipeline) -> bool:
@@ -151,7 +153,29 @@ class LeidenComputation(AnnDataAnalysis):
             operations=source.operations + [leiden_operation],
         )
         self.message = (
-            f"Leiden clustering completed with resolution {self.resolution} "
-            f"and stored in `adata.obs['{self.key_added.format(resolution=self.resolution)}']`."
+            f"Leiden clustering completed with resolution {self.resolution} and stored in `adata.obs['{self.key_added.format(resolution=self.resolution)}']`."
         )
         return pipeline
+
+
+class RankGenesGroupsTracksplot(AnnDataAnalysis):
+    """Create a tracksplot visualization of top differentially expressed genes from rank_genes_groups analysis."""
+
+    groupby = param.Selector(default=None, objects=[], doc="Groupby category for the analysis.")
+
+    n_genes = param.Integer(
+        default=3,
+        bounds=(1, None),
+        doc="""
+        Number of top genes to display in the tracksplot.""",
+    )
+
+    def __call__(self, pipeline):
+        if not self.param.groupby.objects:
+            source = pipeline.source
+            adata = source.get(pipeline.table, return_type="anndata")
+            available_cols = list(adata.obs.columns)
+            self.param.groupby.objects = available_cols
+        if not self.groupby:
+            self.groupby = available_cols[0]
+        return RankGenesGroupsTracksplotPanel(pipeline=pipeline, groupby=self.groupby, n_genes=self.n_genes, solve_dependencies=self.solve_dependencies)
