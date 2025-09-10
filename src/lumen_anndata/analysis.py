@@ -27,7 +27,8 @@ class AnnDataAnalysis(Analysis):
     to an AnnDataSource.
     """
 
-    compute_required = param.Boolean()
+    compute_required = param.Boolean(doc="""
+        If True, the analysis will run required computations before rendering.""")
 
     @classmethod
     async def applies(cls, pipeline) -> bool:
@@ -160,6 +161,9 @@ class LeidenComputation(AnnDataAnalysis):
 
 class RankGenesGroupsTracksplot(AnnDataAnalysis):
     """Create a tracksplot visualization of top differentially expressed genes from rank_genes_groups analysis."""
+
+    compute_required = param.Boolean(doc="""
+        Whether to compute rank_genes_groups on the adata before rendering.""")
 
     groupby = param.Selector(default=None, objects=[], doc="Groupby category for the analysis.")
 
