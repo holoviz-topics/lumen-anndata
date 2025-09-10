@@ -344,7 +344,7 @@ class AnnDataSource(DuckDBSource):
             except Exception as e:
                 # Create empty table
                 with self.connection.cursor() as cursor:
-                    cursor.execute(f"CREATE TABLE {table_name} AS SELECT * FROM (SELECT 1 AS dummy) WHERE 0")
+                    cursor.execute(f"CREATE VIEW {table_name} AS SELECT * FROM (SELECT 1 AS dummy) WHERE 0")
                 self.param.warning(f"Failed to register table '{table_name}' with DuckDB: {e}")
                 # Still mark as materialized even if it failed
                 if table_name not in self._materialized_tables:
