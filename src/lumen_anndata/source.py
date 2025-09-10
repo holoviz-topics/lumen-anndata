@@ -143,8 +143,11 @@ class AnnDataSource(DuckDBSource):
         tables : dict[str, pd.DataFrame]
             Dictionary mapping table names to DataFrames to register.
         """
-        for table_name, df in tables.items():
-            self.connection.register(table_name, df)
+        for table_name, df in tables.items():  # noqa: B007 iused implicitly with duckdb
+            try:
+                self.connection.sql(f"CREATE TABLE {table_name} AS SELECT * FROM df")
+            except Exception:
+                continue
             if table_name not in self._materialized_tables:
                 self._materialized_tables.append(table_name)
             if table_name not in self.tables:
@@ -339,7 +342,8 @@ class AnnDataSource(DuckDBSource):
                 self._register_tables({table_name: df})
             except Exception as e:
                 # Create empty table
-                self.connection.execute(f"CREATE TABLE {table_name} AS SELECT * FROM (SELECT 1 AS dummy) WHERE 0")
+                with self.connection.cursor() as cursor:
+                    cursor.execute(f"CREATE TABLE {table_name} AS SELECT * FROM (SELECT 1 AS dummy) WHERE 0")
                 self.param.warning(f"Failed to register table '{table_name}' with DuckDB: {e}")
                 # Still mark as materialized even if it failed
                 if table_name not in self._materialized_tables:
