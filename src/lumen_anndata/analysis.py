@@ -105,6 +105,9 @@ class ManifoldMapVisualization(AnnDataAnalysis):
 
 class DotMapVisualization(AnnDataAnalysis):
 
+    compute_required = param.Boolean(doc="""
+        Whether to compute pca, neighbors, and umap on the adata before rendering.""")
+
     groupby = param.Selector(default=None, objects=[], doc="""
         Groupby variable for the dot map.""")
 
