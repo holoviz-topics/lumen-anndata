@@ -12,7 +12,7 @@ from lumen.views import View
 
 class AnnDataPanel(View):
 
-    solve_dependencies = param.Boolean(default=False)
+    compute_required = param.Boolean(default=False)
 
     def __init__(self, **params):
         super().__init__(**params)
@@ -20,7 +20,7 @@ class AnnDataPanel(View):
         table = self.pipeline.table
         self.adata = source.get(table, return_type="anndata")
 
-    def _resolve_dependencies(self) -> bool:
+    def _compute_required(self) -> bool:
         return True
 
     def _render_visualization(self):
@@ -29,15 +29,15 @@ class AnnDataPanel(View):
     def get_panel(self):
         hv.Store.set_current_backend("bokeh")
         try:
-            if self.solve_dependencies:
-                self._resolve_dependencies()
+            if self.compute_required:
+                self._compute_required()
             return self._render_visualization()
         except Exception as e:
             return pn.pane.Alert(f"""
-                Encountered error: {e}, which might be a missing dependency.
-                To try auto-resolving dependency issues, please check off
-                'Solve dependencies' and click 'Run' again, or try a
-                different dataset with all depdendencies satisfied.""",
+                Encountered error: {e}, which might require additional computation.
+                To try auto-running required computations, please check off
+                'Compute required' and click 'Run' again, or try a
+                different dataset with all computations completed.""",
                 alert_type="warning"
             )
 
@@ -71,7 +71,7 @@ class RankGenesGroupsTracksplotPanel(AnnDataPanel):
 
     view_type = "rank_genes_groups_tracksplot"
 
-    def _resolve_dependencies(self) -> bool:
+    def _compute_required(self) -> bool:
         sc.tl.rank_genes_groups(self.adata, groupby=self.groupby)
 
     def _render_visualization(self):

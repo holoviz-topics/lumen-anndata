@@ -27,7 +27,7 @@ class AnnDataAnalysis(Analysis):
     to an AnnDataSource.
     """
 
-    solve_dependencies = param.Boolean()
+    compute_required = param.Boolean()
 
     @classmethod
     async def applies(cls, pipeline) -> bool:
@@ -178,4 +178,9 @@ class RankGenesGroupsTracksplot(AnnDataAnalysis):
             self.param.groupby.objects = available_cols
         if not self.groupby:
             self.groupby = available_cols[0]
-        return RankGenesGroupsTracksplotPanel(pipeline=pipeline, groupby=self.groupby, n_genes=self.n_genes, solve_dependencies=self.solve_dependencies)
+        return RankGenesGroupsTracksplotPanel(
+            pipeline=pipeline,
+            groupby=self.groupby,
+            n_genes=self.n_genes,
+            compute_required=self.compute_required
+        )
