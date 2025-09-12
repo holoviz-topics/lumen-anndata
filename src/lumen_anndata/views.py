@@ -79,7 +79,7 @@ class RankGenesGroupsTracksplotPanel(AnnDataPanel):
         return pn.pane.Matplotlib(axes[0].figure, tight=True, sizing_mode="stretch_both")
 
 
-class ClustermapPanel(AnnDataPanel):
+class ClustermapPanel(View):
     view_type = "clustermap"
 
     def get_panel(self):
