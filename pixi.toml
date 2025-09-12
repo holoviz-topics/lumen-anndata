@@ -4,7 +4,7 @@ channels = ["pyviz/label/dev", "conda-forge", "bioconda"]
 platforms = ["linux-64", "osx-arm64", "osx-64", "win-64"]
 
 [tasks]
-install-git-deps = 'pip install "lumen[ai] @ git+https://github.com/holoviz/lumen.git@main" "hv-anndata @ git+https://github.com/holoviz-topics/hv-anndata.git@main"'
+install-git-deps = 'pip install "lumen[ai-transformers] @ git+https://github.com/holoviz/lumen.git@main" "hv-anndata @ git+https://github.com/holoviz-topics/hv-anndata.git@main"'
 install = 'python -m pip install --no-deps --disable-pip-version-check -e .'
 postinstall = 'pixi run install-git-deps'
 
@@ -29,6 +29,7 @@ numpy = "*"
 packaging = "*"
 pandas = "*"
 panel = ">=1.5.0"
+panel-material-ui = ">=0.5.0"
 param = ">=1.9.0"
 pip = "*"
 pooch = ">=1.8.2"
