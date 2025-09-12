@@ -15,7 +15,9 @@ from param.parameterized import bothmethod
 from lumen_anndata.operations import LeidenOperation
 
 from .source import AnnDataSource
-from .views import ClustermapPanel, ManifoldMapPanel, RankGenesGroupsTracksplotPanel
+from .views import (
+    ClustermapPanel, ManifoldMapPanel, RankGenesGroupsTracksplotPanel,
+)
 
 register()
 
