@@ -3,7 +3,7 @@ from pathlib import Path
 import lumen.ai as lmai
 
 from lumen_anndata.analysis import (
-    LeidenComputation, ManifoldMapVisualization, RankGenesGroupsTracksplot,
+    ClustermapVisualization, LeidenComputation, ManifoldMapVisualization, RankGenesGroupsTracksplot,
 )
 from lumen_anndata.controls import CellXGeneSourceControls
 from lumen_anndata.utils import upload_h5ad
@@ -30,7 +30,7 @@ and suggest other relevant entries that might help the user.
 
 def build_ui():
     db_uri = str(Path(__file__).parent / "embeddings" / "scanpy.db")
-    vector_store = lmai.vector_store.DuckDBVectorStore(uri=db_uri, embeddings=lmai.embeddings.OpenAIEmbeddings())
+    vector_store = lmai.vector_store.DuckDBVectorStore(uri=db_uri, embeddings=lmai.embeddings.HuggingFaceEmbeddings())
     doc_lookup = lmai.tools.VectorLookupTool(vector_store=vector_store, n=3)
 
     ui = lmai.ExplorerUI(
@@ -38,7 +38,7 @@ def build_ui():
         table_upload_callbacks={
             ".h5ad": upload_h5ad,
         },
-        analyses=[ManifoldMapVisualization, LeidenComputation, RankGenesGroupsTracksplot],
+        analyses=[ClustermapVisualization, ManifoldMapVisualization, LeidenComputation, RankGenesGroupsTracksplot],
         source_controls=CellXGeneSourceControls,
         log_level="DEBUG",
     )

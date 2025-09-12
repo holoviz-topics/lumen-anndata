@@ -6,7 +6,7 @@ import param
 matplotlib.use("Agg")
 import scanpy as sc
 
-from hv_anndata import ManifoldMap
+from hv_anndata import ClusterMap, ManifoldMap
 from lumen.views import View
 
 
@@ -77,3 +77,11 @@ class RankGenesGroupsTracksplotPanel(AnnDataPanel):
     def _render_visualization(self):
         axes = sc.pl.rank_genes_groups_tracksplot(self.adata, n_genes=self.n_genes, show=False)["track_axes"]
         return pn.pane.Matplotlib(axes[0].figure, tight=True, sizing_mode="stretch_both")
+
+
+class ClustermapPanel(View):
+    view_type = "clustermap"
+
+    def get_panel(self):
+        hv.Store.set_current_backend("bokeh")
+        return ClusterMap(adata=self.pipeline.source.get(self.pipeline.table, return_type="anndata"))

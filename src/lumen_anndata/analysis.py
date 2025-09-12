@@ -15,7 +15,7 @@ from param.parameterized import bothmethod
 from lumen_anndata.operations import LeidenOperation
 
 from .source import AnnDataSource
-from .views import ManifoldMapPanel, RankGenesGroupsTracksplotPanel
+from .views import ClustermapPanel, ManifoldMapPanel, RankGenesGroupsTracksplotPanel
 
 register()
 
@@ -188,3 +188,28 @@ class RankGenesGroupsTracksplot(AnnDataAnalysis):
             n_genes=self.n_genes,
             compute_required=self.compute_required
         )
+
+
+class ClustermapVisualization(AnnDataAnalysis):
+    """Create a clustered heatmap showing mean expression by groups, following scanpy paradigm."""
+
+    def __call__(self, pipeline):
+        # Simple validation that we have the required data
+        source = pipeline.source
+        adata = source.get(pipeline.table, return_type="anndata")
+
+        # Check we have observation and variable data
+        if len(adata.obs.columns) == 0:
+            self.message = "No observation metadata available for grouping."
+            return pipeline
+
+        if len(adata.var.index) == 0:
+            self.message = "No genes available in the dataset."
+            return pipeline
+
+        self.message = (
+            f"ClustermapVisualization view ready with {len(adata.obs.columns)} grouping options "
+            f"and {len(adata.var.index)} genes available."
+        )
+
+        return ClustermapPanel(pipeline=pipeline)
