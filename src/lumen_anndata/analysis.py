@@ -1,7 +1,6 @@
 from functools import partial
 
 import param
-import scanpy as sc
 
 from holoviews import Dataset
 from hv_anndata.interface import ACCESSOR as A, register
@@ -119,18 +118,17 @@ class DotMapVisualization(AnnDataAnalysis):
         adata = pipeline.source.get(pipeline.table, return_type="anndata")
         self._adata = adata
 
-        # Preprocess
-        # TODO: is there a way to check if these already exist?
-        sc.pp.pca(adata)
-        sc.pp.neighbors(adata)
-        sc.tl.umap(adata)
-
         # Populate groupby options
         groupby_values = list(adata.obs.columns)
         self.param["groupby"].objects = groupby_values
         self.groupby = groupby_values[0]
 
-        self._dot_map = DotMapPanel(pipeline=pipeline, groupby=self.groupby, marker_genes=self.marker_genes)
+        self._dot_map = DotMapPanel(
+            pipeline=pipeline,
+            groupby=self.groupby,
+            marker_genes=self.marker_genes,
+            compute_required=self.compute_required
+        )
         return self._dot_map
 
     @param.depends("populate_marker_genes", watch=True, on_init=True)

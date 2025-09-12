@@ -79,7 +79,7 @@ class RankGenesGroupsTracksplotPanel(AnnDataPanel):
         return pn.pane.Matplotlib(axes[0].figure, tight=True, sizing_mode="stretch_both")
 
 
-class ClustermapPanel(View):
+class ClustermapPanel(AnnDataPanel):
     view_type = "clustermap"
 
     def get_panel(self):
@@ -87,14 +87,19 @@ class ClustermapPanel(View):
         return ClusterMap(adata=self.pipeline.source.get(self.pipeline.table, return_type="anndata"))
 
 
-class DotMapPanel(View):
-
-    view_type = "dot_map"
+class DotMapPanel(AnnDataPanel):
 
     groupby = param.String(default="cell_type")
 
     marker_genes = param.Dict(default={})
 
-    def get_panel(self):
+    view_type = "dot_map"
+
+    def _compute_required(self) -> bool:
+        sc.pp.pca(self.adata)
+        sc.pp.neighbors(self.adata)
+        sc.tl.umap(self.adata)
+
+    def _render_visualization(self):
         hv.Store.set_current_backend("bokeh")
         return Dotmap(adata=self.adata, groupby=self.groupby, marker_genes=self.marker_genes)
