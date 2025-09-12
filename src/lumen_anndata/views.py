@@ -1,7 +1,7 @@
 import holoviews as hv
 import param
 
-from hv_anndata import ManifoldMap
+from hv_anndata import ClusterMap, ManifoldMap
 from lumen.views import View
 
 
@@ -22,3 +22,10 @@ class ManifoldMapPanel(View):
             self._init_link_selections()
         adata = self.pipeline.source.get(self.pipeline.table, return_type="anndata")
         return ManifoldMap(adata=adata, ls=self._ls)
+
+class ClustermapPanel(View):
+    view_type = "clustermap"
+
+    def get_panel(self):
+        hv.Store.set_current_backend("bokeh")
+        return ClusterMap(adata=self.pipeline.source.get(self.pipeline.table, return_type="anndata"))
