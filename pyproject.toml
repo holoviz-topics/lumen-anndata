@@ -40,7 +40,7 @@ classifiers = [
 dependencies = [
     "packaging",
     "panel >=1.5.0",
-    "lumen[ai-transformers] @ git+https://github.com/holoviz/lumen.git@main",
+    "lumen[ai-transformers]",
     "anndata >=0.11.4",
     "pooch >=1.8.2",
     "scanpy >=1.11.1",
