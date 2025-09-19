@@ -6,7 +6,7 @@ import param
 matplotlib.use("Agg")
 import scanpy as sc
 
-from hv_anndata import ClusterMap, ManifoldMap
+from hv_anndata import ClusterMap, Dotmap, ManifoldMap
 from lumen.views import View
 
 
@@ -85,3 +85,21 @@ class ClustermapPanel(View):
     def get_panel(self):
         hv.Store.set_current_backend("bokeh")
         return ClusterMap(adata=self.pipeline.source.get(self.pipeline.table, return_type="anndata"))
+
+
+class DotMapPanel(AnnDataPanel):
+
+    groupby = param.String(default="cell_type")
+
+    marker_genes = param.Dict(default={})
+
+    view_type = "dot_map"
+
+    def _compute_required(self) -> bool:
+        sc.pp.pca(self.adata)
+        sc.pp.neighbors(self.adata)
+        sc.tl.umap(self.adata)
+
+    def _render_visualization(self):
+        hv.Store.set_current_backend("bokeh")
+        return Dotmap(adata=self.adata, groupby=self.groupby, marker_genes=self.marker_genes)

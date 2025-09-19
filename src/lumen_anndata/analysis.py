@@ -16,7 +16,8 @@ from lumen_anndata.operations import LeidenOperation
 
 from .source import AnnDataSource
 from .views import (
-    ClustermapPanel, ManifoldMapPanel, RankGenesGroupsTracksplotPanel,
+    ClustermapPanel, DotMapPanel, ManifoldMapPanel,
+    RankGenesGroupsTracksplotPanel,
 )
 
 register()
@@ -57,15 +58,15 @@ class ManifoldMapVisualization(AnnDataAnalysis):
         return instance
 
     def __call__(self, pipeline):
-        self._mm = ManifoldMapPanel(pipeline=pipeline)
-        self._mm.param.watch(partial(self._sync_selection, pipeline), 'selection_expr')
-        return self._mm
+        self._mainfold_map = ManifoldMapPanel(pipeline=pipeline)
+        self._mainfold_map.param.watch(partial(self._sync_selection, pipeline), 'selection_expr')
+        return self._mainfold_map
 
     def _reset_selection(self, event):
         source = self._memory['source']
         source._obs_ids_selected = None
-        self._mm.selection_expr = None
-        self._mm._ls.selection_expr = None
+        self._mainfold_map.selection_expr = None
+        self._mainfold_map._ls.selection_expr = None
         self._initialized_selection = False
 
     async def _sync_selection(self, pipeline, event):
@@ -101,6 +102,47 @@ class ManifoldMapVisualization(AnnDataAnalysis):
         self._memory["data"] = await describe_data(pipeline.data[mask])
         self._chat_message = self.interface.stream(self._reset_col, user="Assistant", message=self._chat_message)
 
+
+class DotMapVisualization(AnnDataAnalysis):
+
+    compute_required = param.Boolean(doc="""
+        Whether to compute pca, neighbors, and umap on the adata before rendering.""")
+
+    groupby = param.Selector(default=None, objects=[], doc="""
+        Groupby variable for the dot map.""")
+
+    marker_genes = param.Dict(default={}, doc="""
+        Marker genes for the dot map.""")
+
+    populate_marker_genes = param.Boolean(default=False, doc="""
+        Whether to populate marker genes arbitrarily with samples.""")
+
+    def __call__(self, pipeline):
+        adata = pipeline.source.get(pipeline.table, return_type="anndata")
+        self._adata = adata
+
+        # Populate groupby options
+        groupby_values = list(adata.obs.columns)
+        self.param["groupby"].objects = groupby_values
+        self.groupby = groupby_values[0]
+
+        self._dot_map = DotMapPanel(
+            pipeline=pipeline,
+            groupby=self.groupby,
+            marker_genes=self.marker_genes,
+            compute_required=self.compute_required
+        )
+        return self._dot_map
+
+    @param.depends("populate_marker_genes", watch=True, on_init=True)
+    def _populate_marker_genes(self):
+        if not self.populate_marker_genes:
+            return
+        all_genes = self._adata.var_names.tolist()[:30]
+        self.marker_genes = {
+            f"Sample {i}": all_genes[i:i+10]
+            for i in range(0, len(all_genes), 10)
+        }
 
 class LeidenComputation(AnnDataAnalysis):
     """Perform Leiden clustering."""
