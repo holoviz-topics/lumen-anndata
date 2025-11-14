@@ -15,7 +15,9 @@ from param.parameterized import bothmethod
 from lumen_anndata.operations import LeidenOperation
 
 from .source import AnnDataSource
-from .views import ManifoldMapPanel
+from .views import (
+    ClustermapPanel, ManifoldMapPanel, RankGenesGroupsTracksplotPanel,
+)
 
 register()
 
@@ -26,6 +28,9 @@ class AnnDataAnalysis(Analysis):
     This class is used to ensure that the analysis can be applied
     to an AnnDataSource.
     """
+
+    compute_required = param.Boolean(doc="""
+        If True, the analysis will run required computations before rendering.""")
 
     @classmethod
     async def applies(cls, pipeline) -> bool:
@@ -151,7 +156,62 @@ class LeidenComputation(AnnDataAnalysis):
             operations=source.operations + [leiden_operation],
         )
         self.message = (
-            f"Leiden clustering completed with resolution {self.resolution} "
-            f"and stored in `adata.obs['{self.key_added.format(resolution=self.resolution)}']`."
+            f"Leiden clustering completed with resolution {self.resolution} and stored in `adata.obs['{self.key_added.format(resolution=self.resolution)}']`."
         )
         return pipeline
+
+
+class RankGenesGroupsTracksplot(AnnDataAnalysis):
+    """Create a tracksplot visualization of top differentially expressed genes from rank_genes_groups analysis."""
+
+    compute_required = param.Boolean(doc="""
+        Whether to compute rank_genes_groups on the adata before rendering.""")
+
+    groupby = param.Selector(default=None, objects=[], doc="Groupby category for the analysis.")
+
+    n_genes = param.Integer(
+        default=3,
+        bounds=(1, None),
+        doc="""
+        Number of top genes to display in the tracksplot.""",
+    )
+
+    def __call__(self, pipeline):
+        if not self.param.groupby.objects:
+            source = pipeline.source
+            adata = source.get(pipeline.table, return_type="anndata")
+            available_cols = list(adata.obs.columns)
+            self.param.groupby.objects = available_cols
+        if not self.groupby:
+            self.groupby = available_cols[0]
+        return RankGenesGroupsTracksplotPanel(
+            pipeline=pipeline,
+            groupby=self.groupby,
+            n_genes=self.n_genes,
+            compute_required=self.compute_required
+        )
+
+
+class ClustermapVisualization(AnnDataAnalysis):
+    """Create a clustered heatmap showing mean expression by groups, following scanpy paradigm."""
+
+    def __call__(self, pipeline):
+        # Simple validation that we have the required data
+        source = pipeline.source
+        adata = source.get(pipeline.table, return_type="anndata")
+
+        # Check we have observation and variable data
+        if len(adata.obs.columns) == 0:
+            self.message = "No observation metadata available for grouping."
+            return pipeline
+
+        if len(adata.var.index) == 0:
+            self.message = "No genes available in the dataset."
+            return pipeline
+
+        self.message = (
+            f"ClustermapVisualization view ready with {len(adata.obs.columns)} grouping options "
+            f"and {len(adata.var.index)} genes available."
+        )
+
+        return ClustermapPanel(pipeline=pipeline)

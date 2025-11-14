@@ -2,7 +2,10 @@ from pathlib import Path
 
 import lumen.ai as lmai
 
-from lumen_anndata.analysis import LeidenComputation, ManifoldMapVisualization
+from lumen_anndata.analysis import (
+    ClustermapVisualization, LeidenComputation, ManifoldMapVisualization,
+    RankGenesGroupsTracksplot,
+)
 from lumen_anndata.controls import CellXGeneSourceControls
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -27,12 +30,12 @@ and suggest other relevant entries that might help the user.
 
 def build_ui():
     db_uri = str(Path(__file__).parent / "embeddings" / "scanpy.db")
-    vector_store = lmai.vector_store.DuckDBVectorStore(uri=db_uri, embeddings=lmai.embeddings.OpenAIEmbeddings())
+    vector_store = lmai.vector_store.DuckDBVectorStore(uri=db_uri, embeddings=lmai.embeddings.HuggingFaceEmbeddings())
     doc_lookup = lmai.tools.VectorLookupTool(vector_store=vector_store, n=3)
 
     ui = lmai.ExplorerUI(
         agents=[lmai.agents.ChatAgent(tools=[doc_lookup], template_overrides={"main": {"instructions": INSTRUCTIONS}})],
-        analyses=[ManifoldMapVisualization, LeidenComputation],
+        analyses=[ClustermapVisualization, ManifoldMapVisualization, LeidenComputation, RankGenesGroupsTracksplot],
         source_controls=CellXGeneSourceControls,
         log_level="DEBUG",
     )
