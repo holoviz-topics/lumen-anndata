@@ -1,5 +1,6 @@
 import asyncio
 
+from functools import partial
 from io import BytesIO
 
 import cellxgene_census
@@ -8,6 +9,9 @@ import param
 import s3fs
 
 from lumen.ai.controls import SourceControls
+from panel_material_ui import Column, Tabs
+
+from .utils import upload_h5ad
 
 
 class CellXGeneSourceControls(SourceControls):
@@ -30,6 +34,10 @@ class CellXGeneSourceControls(SourceControls):
     )
 
     soma_kwargs = param.Dict(default={}, doc="Additional parameters for soma connection")
+
+    table_upload_callbacks = param.Dict(default={
+        ".h5ad": upload_h5ad,
+    })
 
     def __init__(self, **params):
         super().__init__(**params)
@@ -62,7 +70,13 @@ class CellXGeneSourceControls(SourceControls):
             formatters={"dataset_total_cell_count": {"type": "money", "thousand": ",", "symbol": ""}},
             # Disable editing
             editors={"collection_name": None, "dataset_title": None, "dataset_total_cell_count": None, "dataset_id": None},
-            loading=True,
+        )
+        self._czi_controls = Column(
+            pn.pane.Markdown(
+                object="*Click on download icons to ingest datasets.*",
+                margin=0,
+            ),
+            self._tabulator
         )
         pn.state.onload(self._onload)
 
@@ -90,9 +104,8 @@ class CellXGeneSourceControls(SourceControls):
         self._tabulator.on_click(self._ingest_h5ad)
         self._tabulator.param.update(
             value=display_df,
-            loading=False,
         )
-        # self._czi_controls.loading = False
+        self._czi_controls.loading = False
 
     def _get_row_content(self, row):
         """
@@ -126,45 +139,38 @@ class CellXGeneSourceControls(SourceControls):
         text_content = "\n".join(lines)
         return pn.pane.Markdown(text_content, sizing_mode="stretch_width", styles={"color": "black"})
 
+    async def _download_file(self, locator):
+        fs = s3fs.S3FileSystem(
+            config_kwargs={"user_agent": "lumen-anndata"},
+            anon=True,
+            asynchronous=True,
+            cache_regions=True,
+        )
+        session = await fs.set_session()
+        try:
+            b = BytesIO(await fs._cat_file(locator["uri"]))
+        finally:
+            await session.close()
+        return b
+
     async def _ingest_h5ad(self, event):
         """
         Uploads an h5ad file and returns an AnnDataSource.
         """
-        with self._tabulator.param.update(loading=True), self.param.update(disabled=True):
+        with self._czi_controls.param.update(loading=True), self.param.update(disabled=True):
             await asyncio.sleep(0.05)  # yield the event loop to ensure UI updates
             dataset_id = self.datasets_df.loc[event.row, "dataset_id"]
             dataset_title = self.datasets_df.loc[event.row, "dataset_title"]
             locator = cellxgene_census.get_source_h5ad_uri(dataset_id, census_version=self.census_version)
-            # Initialize s3fs
-            fs = s3fs.S3FileSystem(
-                config_kwargs={"user_agent": "lumen-anndata"},
-                anon=True,
-                cache_regions=True,
-            )
-            buffer = BytesIO()
-            with fs.open(locator["uri"], "rb") as f:
-                while True:
-                    chunk = f.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    buffer.write(chunk)
-            buffer.seek(0)  # reset for reading
-            self.downloaded_files = {f"{dataset_title}.h5ad": buffer}
-            self.param.trigger("trigger_add")  # automatically trigger the add
+            file_buffer = await self._download_file(locator)
+            self.downloaded_files = {f"{dataset_title}.h5ad": file_buffer}
+            self.param.trigger("add")  # automatically trigger the add
             self.status = f"Dataset '{dataset_title}' has been added successfully."
 
     def __panel__(self):
-        self._czi_controls = pn.Column(
-            pn.pane.Markdown(
-                object="*Click on download icons to ingest datasets.*",
-                margin=0,
-            ),
-            self._tabulator,
-            loading=True
-        )
         original_controls = super().__panel__()
         return pn.Column(
-            pn.Tabs(
+            Tabs(
                 ("Upload Datasets", original_controls),
                 ("CELLxGENE Census Datasets", self._czi_controls),
                 dynamic=True,

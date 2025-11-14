@@ -51,7 +51,7 @@ class ManifoldMapVisualization(AnnDataAnalysis):
         instance._reset_col = None
         return instance
 
-    def __call__(self, pipeline):
+    def __call__(self, pipeline, context):
         self._mm = ManifoldMapPanel(pipeline=pipeline)
         self._mm.param.watch(partial(self._sync_selection, pipeline), 'selection_expr')
         return self._mm
@@ -128,7 +128,7 @@ class LeidenComputation(AnnDataAnalysis):
         Key under which to store the clustering in adata.obs.""",
     )
 
-    def __call__(self, pipeline):
+    def __call__(self, pipeline, context):
         source = pipeline.source
         adata = source.get(pipeline.table, return_type="anndata")
         available_cols = list(adata.obs.columns)

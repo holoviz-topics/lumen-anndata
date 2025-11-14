@@ -4,7 +4,6 @@ import lumen.ai as lmai
 
 from lumen_anndata.analysis import LeidenComputation, ManifoldMapVisualization
 from lumen_anndata.controls import CellXGeneSourceControls
-from lumen_anndata.utils import upload_h5ad
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 
@@ -33,11 +32,9 @@ def build_ui():
 
     ui = lmai.ExplorerUI(
         agents=[lmai.agents.ChatAgent(tools=[doc_lookup], template_overrides={"main": {"instructions": INSTRUCTIONS}})],
-        table_upload_callbacks={
-            ".h5ad": upload_h5ad,
-        },
         analyses=[ManifoldMapVisualization, LeidenComputation],
         source_controls=CellXGeneSourceControls,
         log_level="DEBUG",
     )
+
     return ui
