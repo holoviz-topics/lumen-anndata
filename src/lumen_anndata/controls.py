@@ -1,6 +1,5 @@
 import asyncio
 
-from functools import partial
 from io import BytesIO
 
 import cellxgene_census
@@ -9,7 +8,7 @@ import param
 import s3fs
 
 from lumen.ai.controls import SourceControls
-from panel_material_ui import Column, Tabs
+from panel_material_ui import Column
 
 from .utils import upload_h5ad
 
@@ -174,7 +173,7 @@ class CellXGeneSourceControls(SourceControls):
                 buf.write(data)
                 # update progress
                 downloaded += len(data)
-                progress = min((len(data) / total_size) * 100, 100)
+                progress = min((downloaded / total_size) * 100, 100)
                 self._progress_bar.value = progress
                 self._progress_description.object = f"{progress}%"
                 await asyncio.sleep(0.01)
