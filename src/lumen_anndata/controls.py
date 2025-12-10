@@ -54,6 +54,7 @@ class CellXGeneSourceControls(SourceControls):
             show_index=False,
             # Client-side filtering in headers
             header_filters=filters,
+            on_click=self._ingest_h5ad,
             # Row content function for technical details
             row_content=self._get_row_content,
             # Column configuration
@@ -74,10 +75,13 @@ class CellXGeneSourceControls(SourceControls):
         self._czi_controls = Column(
             pn.pane.Markdown(
                 object="*Click on download icons to ingest datasets.*",
-                margin=0,
+                margin=(0, 10),
             ),
-            self._tabulator
+            self._tabulator,
+            loading=True
         )
+        self._input_tabs.append(("CELLxGENE Census Datasets", self._czi_controls))
+        self._input_tabs.active = 2
         pn.state.onload(self._onload)
 
     @pn.cache
@@ -101,10 +105,7 @@ class CellXGeneSourceControls(SourceControls):
                 "dataset_id",  # Keep this for row content lookup
             ]
         ]
-        self._tabulator.on_click(self._ingest_h5ad)
-        self._tabulator.param.update(
-            value=display_df,
-        )
+        self._tabulator.value = display_df
         self._czi_controls.loading = False
 
     def _get_row_content(self, row):
@@ -139,7 +140,7 @@ class CellXGeneSourceControls(SourceControls):
         text_content = "\n".join(lines)
         return pn.pane.Markdown(text_content, sizing_mode="stretch_width", styles={"color": "black"})
 
-    async def _download_file(self, locator):
+    async def _download_file(self, locator, chunk_size=5_000_000, max_concurrency=8):
         fs = s3fs.S3FileSystem(
             config_kwargs={"user_agent": "lumen-anndata"},
             anon=True,
@@ -147,30 +148,66 @@ class CellXGeneSourceControls(SourceControls):
             cache_regions=True,
         )
         session = await fs.set_session()
+
+        info = await fs._info(locator["uri"])
+        total_size = int(info["size"])
+        downloaded = 0
+        self._setup_progress_bar(total_size)
+
+        await asyncio.sleep(0.01)
+
+        # Prepare output buffer
+        buf = BytesIO()
+        buf.seek(total_size - 1)
+        buf.write(b"\0")   # allocate size
+        buf.seek(0)
+
+        sem = asyncio.Semaphore(max_concurrency)
+
+        async def fetch_range(start, end):
+            nonlocal downloaded
+            # S3 range is [start, end), end exclusive in s3fs
+            async with sem:
+                data = await fs._cat_file(locator["uri"], start=start, end=end)
+                # place in the correct spot
+                buf.seek(start)
+                buf.write(data)
+                # update progress
+                downloaded += len(data)
+                progress = min((len(data) / total_size) * 100, 100)
+                self._progress_bar.value = progress
+                self._progress_description.object = f"{progress}%"
+                await asyncio.sleep(0.01)
+
+        ranges = []
+        for start in range(0, total_size, chunk_size):
+            end = min(start + chunk_size, total_size)
+            ranges.append((start, end))
+
         try:
-            b = BytesIO(await fs._cat_file(locator["uri"]))
+            tasks = [asyncio.create_task(fetch_range(s, e)) for s, e in ranges]
+            await asyncio.gather(*tasks)
         finally:
             await session.close()
-        return b
+            self._progress_description.object = ""
+            self._progress_bar.visible = False
+
+        buf.seek(0)
+        return buf
 
     async def _ingest_h5ad(self, event):
         """
         Uploads an h5ad file and returns an AnnDataSource.
         """
         with self._czi_controls.param.update(loading=True), self.param.update(disabled=True):
-            await asyncio.sleep(0.05)  # yield the event loop to ensure UI updates
             dataset_id = self.datasets_df.loc[event.row, "dataset_id"]
             dataset_title = self.datasets_df.loc[event.row, "dataset_title"]
+            self._setup_progress_bar(0)
+            self._progress_description.object = f"Fetching S3 URL for {dataset_title}"
+            await asyncio.sleep(0.05)  # yield the event loop to ensure UI updates
             locator = cellxgene_census.get_source_h5ad_uri(dataset_id, census_version=self.census_version)
+            self._progress_description.object = f"Beginning file download for {dataset_title}"
             file_buffer = await self._download_file(locator)
             self.downloaded_files = {f"{dataset_title}.h5ad": file_buffer}
             self.param.trigger("add")  # automatically trigger the add
             self.status = f"Dataset '{dataset_title}' has been added successfully."
-
-    def __panel__(self):
-        original_controls = super().__panel__()
-        # Append to input tabs; add check to prevent duplicate
-        if len(original_controls[0]) == 2:
-            original_controls[0].append(("CELLxGENE Census Datasets", self._czi_controls))
-            original_controls[0].active = len(original_controls[0]) - 1
-        return original_controls
