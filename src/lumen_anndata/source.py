@@ -20,7 +20,7 @@ from anndata import AnnData
 from lumen.config import config
 from lumen.serializers import Serializer
 from lumen.sources.duckdb import DuckDBSource
-from lumen.transforms import SQLFilter, SQLPreFilter
+from lumen.transforms import SQLFilter, SQLPreFilter, SQLSelectFrom
 from lumen.util import resolve_module_reference
 from sqlglot import parse_one
 from sqlglot.expressions import Table
@@ -63,6 +63,8 @@ class AnnDataSource(DuckDBSource):
         saved under the `.lumen_anndata_cache` directory,  or in `/tmp` if there is a PermissionError.
         """
     )
+
+    sql_expr = param.String(default="{table}", doc="The SQL expression to execute.")
 
     source_type = "anndata"
 
@@ -815,3 +817,17 @@ class AnnDataSource(DuckDBSource):
 
         # Use parent class from_spec for everything else
         return super().from_spec(spec)
+
+    def get_sql_expr(self, table: str | dict):
+        """
+        Returns the SQL expression corresponding to a particular table.
+        """
+        tables_dict = {}
+        if isinstance(self.tables, dict):
+            if table in self.tables:
+                tables_dict[table] = self.tables[table]
+            else:
+                tables_dict = self.tables
+
+        sql_expr = SQLSelectFrom(sql_expr=self.sql_expr, tables=tables_dict, read=self.dialect).apply(table)
+        return sql_expr
