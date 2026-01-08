@@ -8,10 +8,9 @@ import param
 import s3fs
 
 from lumen.ai.controls import BaseSourceControls, DownloadControls
-from panel.layout import Row
 from panel.pane import Markdown
 from panel.widgets import Tabulator
-from panel_material_ui import Column, Tabs
+from panel_material_ui import Column
 
 from .utils import upload_h5ad
 
