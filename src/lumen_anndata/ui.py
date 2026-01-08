@@ -6,7 +6,9 @@ from lumen_anndata.analysis import (
     ClustermapVisualization, LeidenComputation, ManifoldMapVisualization,
     RankGenesGroupsTracksplot,
 )
+from lumen.ai.controls import UploadControls
 from lumen_anndata.controls import CellXGeneSourceControls
+from lumen_anndata.utils import upload_h5ad
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 
@@ -27,7 +29,6 @@ If you cannot find a match or give a confident answer, acknowledge it
 and suggest other relevant entries that might help the user.
 """
 
-
 def build_ui():
     db_uri = str(Path(__file__).parent / "embeddings" / "scanpy.db")
     vector_store = lmai.vector_store.DuckDBVectorStore(uri=db_uri, embeddings=lmai.embeddings.HuggingFaceEmbeddings())
@@ -36,7 +37,8 @@ def build_ui():
     ui = lmai.ExplorerUI(
         agents=[lmai.agents.ChatAgent(tools=[doc_lookup], template_overrides={"main": {"instructions": INSTRUCTIONS}})],
         analyses=[ClustermapVisualization, ManifoldMapVisualization, LeidenComputation, RankGenesGroupsTracksplot],
-        source_controls=CellXGeneSourceControls,
+        source_controls=[CellXGeneSourceControls, UploadControls],
+        upload_handlers={"h5ad": upload_h5ad},
         log_level="DEBUG",
     )
 

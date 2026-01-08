@@ -7,13 +7,16 @@ import panel as pn
 import param
 import s3fs
 
-from lumen.ai.controls import SourceControls
-from panel_material_ui import Column
+from lumen.ai.controls import BaseSourceControls, DownloadControls
+from panel.layout import Row
+from panel.pane import Markdown
+from panel.widgets import Tabulator
+from panel_material_ui import Column, Tabs
 
 from .utils import upload_h5ad
 
 
-class CellXGeneSourceControls(SourceControls):
+class CellXGeneSourceControls(DownloadControls):
     """Simple tabulator browser for CELLxGENE Census datasets"""
 
     active = param.Integer(default=1, doc="Active tab index")
@@ -38,15 +41,17 @@ class CellXGeneSourceControls(SourceControls):
         ".h5ad": upload_h5ad,
     })
 
+    label = '<span class="material-icons" style="vertical-align: middle;">biotech</span> CELLxGENE Census Datasets'
+
     def __init__(self, **params):
-        super().__init__(**params)
+        BaseSourceControls.__init__(self, **params)
         filters = {
             "collection_name": {"type": "input", "func": "like", "placeholder": "Enter name"},
             "dataset_title": {"type": "input", "func": "like", "placeholder": "Enter title"},
             "dataset_total_cell_count": {"type": "number", "func": ">=", "placeholder": "Enter min cells"},
             "dataset_id": {"type": "input", "func": "like", "placeholder": "Enter ID"},
         }
-        self._tabulator = pn.widgets.Tabulator(
+        self._tabulator = Tabulator(
             page_size=5,
             pagination="local",
             sizing_mode="stretch_width",
@@ -71,16 +76,18 @@ class CellXGeneSourceControls(SourceControls):
             # Disable editing
             editors={"collection_name": None, "dataset_title": None, "dataset_total_cell_count": None, "dataset_id": None},
         )
-        self._czi_controls = Column(
-            pn.pane.Markdown(
+        self._layout = Column(
+            Markdown(
                 object="*Click on download icons to ingest datasets.*",
                 margin=(0, 10),
             ),
             self._tabulator,
+            self._error_placeholder,
+            self._message_placeholder,
+            self._progress_bar,
+            self._progress_description,
             loading=True
         )
-        self._input_tabs.append(("CELLxGENE Census Datasets", self._czi_controls))
-        self._input_tabs.active = 2
         pn.state.onload(self._onload)
 
     @pn.cache
@@ -105,7 +112,7 @@ class CellXGeneSourceControls(SourceControls):
             ]
         ]
         self._tabulator.value = display_df
-        self._czi_controls.loading = False
+        self._layout.loading = False
 
     def _get_row_content(self, row):
         """
@@ -137,7 +144,7 @@ class CellXGeneSourceControls(SourceControls):
             f"  Total Cells: {full_info.get('dataset_total_cell_count', 'N/A'):,}",
         ]
         text_content = "\n".join(lines)
-        return pn.pane.Markdown(text_content, sizing_mode="stretch_width", styles={"color": "black"})
+        return Markdown(text_content, sizing_mode="stretch_width", styles={"color": "black"})
 
     async def _download_file(self, locator, chunk_size=5_000_000, max_concurrency=8):
         fs = s3fs.S3FileSystem(
@@ -194,11 +201,20 @@ class CellXGeneSourceControls(SourceControls):
         buf.seek(0)
         return buf
 
+    @param.depends("add", watch=True)
+    def _on_add(self):
+        if not self._upload_cards:
+            return
+        self._process_files()
+        self._count += 3
+        self._clear_uploads()
+        self.param.trigger('upload_successful')
+
     async def _ingest_h5ad(self, event):
         """
         Uploads an h5ad file and returns an AnnDataSource.
         """
-        with self._czi_controls.param.update(loading=True), self.param.update(disabled=True):
+        with self.param.update(disabled=True):
             dataset_id = self.datasets_df.loc[event.row, "dataset_id"]
             dataset_title = self.datasets_df.loc[event.row, "dataset_title"]
             self._setup_progress_bar(0)
@@ -207,6 +223,7 @@ class CellXGeneSourceControls(SourceControls):
             locator = cellxgene_census.get_source_h5ad_uri(dataset_id, census_version=self.census_version)
             self._progress_description.object = f"Beginning file download for {dataset_title}"
             file_buffer = await self._download_file(locator)
-            self.downloaded_files = {f"{dataset_title}.h5ad": file_buffer}
+            downloaded_files = {f"{dataset_title}.h5ad": file_buffer}
+            self._generate_file_cards(downloaded_files)
             self.param.trigger("add")  # automatically trigger the add
             self.status = f"Dataset '{dataset_title}' has been added successfully."
