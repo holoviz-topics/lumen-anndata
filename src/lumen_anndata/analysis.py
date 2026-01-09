@@ -30,7 +30,7 @@ class AnnDataAnalysis(Analysis):
     """
 
     compute_required = param.Boolean(doc="""
-        If True, the analysis will run required computations before rendering.""")
+        If True, the analysis will run required computations before rendering.""", precedence=-1)
 
     @classmethod
     async def applies(cls, pipeline) -> bool:
