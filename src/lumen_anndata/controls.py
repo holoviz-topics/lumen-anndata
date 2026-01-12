@@ -181,7 +181,7 @@ class CellXGeneSourceControls(DownloadControls):
                 downloaded += len(data)
                 progress = min((downloaded / total_size) * 100, 100)
                 self._progress_bar.value = progress
-                self._progress_description.object = f"{progress}%"
+                self._progress_description.object = f"{progress:.1f}%"
                 await asyncio.sleep(0.01)
 
         ranges = []
