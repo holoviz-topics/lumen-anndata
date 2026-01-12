@@ -152,7 +152,7 @@ class CellXGeneSourceControls(DownloadControls):
             asynchronous=True,
             cache_regions=True,
         )
-        session = await fs.set_session()
+        await fs.set_session()
 
         info = await fs._info(locator["uri"])
         total_size = int(info["size"])
@@ -193,7 +193,6 @@ class CellXGeneSourceControls(DownloadControls):
             tasks = [asyncio.create_task(fetch_range(s, e)) for s, e in ranges]
             await asyncio.gather(*tasks)
         finally:
-            await session.close()
             self._progress_description.object = ""
             self._progress_bar.visible = False
 
