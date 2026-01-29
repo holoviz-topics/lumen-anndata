@@ -30,7 +30,7 @@ class AnnDataAnalysis(Analysis):
     """
 
     compute_required = param.Boolean(doc="""
-        If True, the analysis will run required computations before rendering.""")
+        If True, the analysis will run required computations before rendering.""", precedence=-1)
 
     @classmethod
     async def applies(cls, pipeline) -> bool:
@@ -56,7 +56,7 @@ class ManifoldMapVisualization(AnnDataAnalysis):
         instance._reset_col = None
         return instance
 
-    def __call__(self, pipeline):
+    def __call__(self, pipeline, context):
         self._mm = ManifoldMapPanel(pipeline=pipeline)
         self._mm.param.watch(partial(self._sync_selection, pipeline), 'selection_expr')
         return self._mm
@@ -133,7 +133,7 @@ class LeidenComputation(AnnDataAnalysis):
         Key under which to store the clustering in adata.obs.""",
     )
 
-    def __call__(self, pipeline):
+    def __call__(self, pipeline, context):
         source = pipeline.source
         adata = source.get(pipeline.table, return_type="anndata")
         available_cols = list(adata.obs.columns)
@@ -176,7 +176,7 @@ class RankGenesGroupsTracksplot(AnnDataAnalysis):
         Number of top genes to display in the tracksplot.""",
     )
 
-    def __call__(self, pipeline):
+    def __call__(self, pipeline, context):
         if not self.param.groupby.objects:
             source = pipeline.source
             adata = source.get(pipeline.table, return_type="anndata")
@@ -195,7 +195,7 @@ class RankGenesGroupsTracksplot(AnnDataAnalysis):
 class ClustermapVisualization(AnnDataAnalysis):
     """Create a clustered heatmap showing mean expression by groups, following scanpy paradigm."""
 
-    def __call__(self, pipeline):
+    def __call__(self, pipeline, context):
         # Simple validation that we have the required data
         source = pipeline.source
         adata = source.get(pipeline.table, return_type="anndata")
