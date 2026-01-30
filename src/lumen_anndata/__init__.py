@@ -9,4 +9,10 @@ except importlib.metadata.PackageNotFoundError as e:  # pragma: no cover
     warnings.warn(f"Could not determine version of {__name__}\n{e!s}", stacklevel=2)
     __version__ = "unknown"
 
-__all__: list[str] = []  # <- IMPORTANT FOR DOCS: fill with imports
+from .controls import CellXGeneSourceControls
+from .source import AnnDataSource
+
+__all__: list[str] = [
+    "AnnDataSource",
+    "CellXGeneSourceControls",
+]
