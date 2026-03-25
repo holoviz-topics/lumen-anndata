@@ -3,7 +3,7 @@ requires = [
     "hatchling",
     "hatch-vcs",
     "panel>=1.5.0",
-    "lumen>=0.9.0",
+    "lumen>=1.1.0",
     "packaging",
 ]
 build-backend = "hatchling.build"
