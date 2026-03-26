@@ -2,7 +2,6 @@ import asyncio
 
 from io import BytesIO
 
-import cellxgene_census
 import panel as pn
 import param
 import s3fs
@@ -85,6 +84,7 @@ class CellXGeneSourceControls(BaseSourceControls):
     @pn.cache
     def _fetch_datasets_catalog(self, census_version: str, uri: str, **soma_kwargs):
         """Fetch and cache the datasets catalog."""
+        import cellxgene_census
         with cellxgene_census.open_soma(
             census_version=census_version, uri=uri, **soma_kwargs
         ) as census:
@@ -147,6 +147,7 @@ class CellXGeneSourceControls(BaseSourceControls):
 
         # Get S3 URL
         self.progress(f"Fetching S3 URL for {dataset_title}...")
+        import cellxgene_census
         locator = cellxgene_census.get_source_h5ad_uri(
             dataset_id, census_version=self.census_version
         )
