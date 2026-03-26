@@ -33,12 +33,12 @@ param = ">=1.9.0"
 pip = "*"
 pooch = ">=1.8.2"
 scanpy = ">=1.11.1"
+cellxgene-census = ">=1.17.0"
 
 # Note: Git dependencies will be installed via pip in the install task
 # anndata @ git+https://github.com/scverse/anndata.git@main  (required for hv-anndata>=0.13.0.dev0)
 # lumen[ai] @ git+https://github.com/holoviz/lumen.git@main
 # hv-anndata @ git+https://github.com/holoviz-topics/hv-anndata.git@main
-# cellxgene_census  # due to it being in bioconda
 
 [feature.py312.dependencies]
 python = "3.12.*"
