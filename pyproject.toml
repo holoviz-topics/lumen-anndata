@@ -157,6 +157,8 @@ filterwarnings = [
     "error",
     "ignore::DeprecationWarning",
     "ignore::UserWarning",
+    "ignore::FutureWarning",
+    "ignore::anndata._warnings.OldFormatWarning",
 ]
 testpaths = ["tests"]
 
