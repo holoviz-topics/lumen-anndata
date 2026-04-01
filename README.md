@@ -5,11 +5,7 @@
 [![pypi-version](https://img.shields.io/pypi/v/lumen-anndata.svg?logo=pypi&logoColor=white&style=flat-square)](https://pypi.org/project/lumen-anndata)
 [![python-version](https://img.shields.io/pypi/pyversions/lumen-anndata?logoColor=white&logo=python&style=flat-square)](https://pypi.org/project/lumen-anndata)
 
-
-
-https://github.com/user-attachments/assets/836f0699-6379-4314-a861-7e3729d66f48
-
-
+https://github.com/user-attachments/assets/466b8310-70a7-45d6-8e32-5cf60011c7b8
 
 ## Overview
 
