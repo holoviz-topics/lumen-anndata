@@ -64,7 +64,7 @@ class AnnDataSource(DuckDBSource):
         """
     )
 
-    sql_expr = param.String(default="{table}", doc="The SQL expression to execute.")
+    sql_expr = param.String(default="SELECT * FROM {table}", doc="The SQL expression to execute.")
 
     source_type = "anndata"
 

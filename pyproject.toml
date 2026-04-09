@@ -3,13 +3,10 @@ requires = [
     "hatchling",
     "hatch-vcs",
     "panel>=1.5.0",
-    "lumen>=0.9.0",
+    "lumen>=1.1.0",
     "packaging",
 ]
 build-backend = "hatchling.build"
-
-
-
 
 [project]
 name = "lumen-anndata"
@@ -39,14 +36,14 @@ classifiers = [
 
 dependencies = [
     "packaging",
-    "panel >=1.5.0",
-    "lumen[ai-transformers]",
+    "panel >=1.8.9",
+    "lumen[ai-transformers] >=1.1.0",
     "anndata >=0.11.4",
     "pooch >=1.8.2",
     "scanpy >=1.11.1",
     "hv-anndata >=0.0.1",
     "cellxgene_census >=1.17.0",
-    "panel-material-ui >= 0.5.0"
+    "panel-material-ui >=0.9.0"
 ]
 
 
@@ -157,11 +154,13 @@ filterwarnings = [
     "error",
     "ignore::DeprecationWarning",
     "ignore::UserWarning",
+    "ignore::FutureWarning",
+    "ignore::anndata._warnings.OldFormatWarning",
 ]
 testpaths = ["tests"]
 
 [tool.mypy]
-python_version = '3.11'
+python_version = '3.12'
 no_implicit_optional = true
 check_untyped_defs = true
 
