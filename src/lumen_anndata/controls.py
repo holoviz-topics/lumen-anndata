@@ -142,12 +142,13 @@ class CellXGeneSourceControls(BaseSourceControls):
 
     async def _download_dataset(self, row_idx) -> SourceResult:
         """Download and process a dataset from CELLxGENE."""
+        import cellxgene_census
+        await asyncio.sleep(0.01)  # Allow UI to update before starting download
         dataset_id = self.datasets_df.loc[row_idx, "dataset_id"]
         dataset_title = self.datasets_df.loc[row_idx, "dataset_title"]
 
         # Get S3 URL
         self.progress(f"Fetching S3 URL for {dataset_title}...")
-        import cellxgene_census
         locator = cellxgene_census.get_source_h5ad_uri(
             dataset_id, census_version=self.census_version
         )

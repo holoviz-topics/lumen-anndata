@@ -3,7 +3,7 @@ from functools import partial
 import param
 
 from holoviews import Dataset
-from hv_anndata.interface import ACCESSOR as A, register
+from hv_anndata import A, register
 from lumen.ai.analysis import Analysis
 from lumen.ai.utils import describe_data
 from lumen.filters import ConstantFilter
