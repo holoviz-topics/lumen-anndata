@@ -143,7 +143,7 @@ class CellXGeneSourceControls(BaseSourceControls):
     async def _download_dataset(self, row_idx) -> SourceResult:
         """Download and process a dataset from CELLxGENE."""
         import cellxgene_census
-        await asyncio.sleep(0.1)  # Allow UI to update before starting download
+        await asyncio.sleep(0.01)  # Allow UI to update before starting download
         dataset_id = self.datasets_df.loc[row_idx, "dataset_id"]
         dataset_title = self.datasets_df.loc[row_idx, "dataset_title"]
 
