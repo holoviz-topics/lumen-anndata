@@ -78,6 +78,8 @@ class CellXGeneSourceControls(CatalogSourceControls):
         dataset_title = entry["dataset_title"]
 
         self.progress(f"Fetching S3 URL for {dataset_title}...")
+        await asyncio.sleep(0.01)
+
         locator = cellxgene_census.get_source_h5ad_uri(
             dataset_id, census_version=self.census_version
         )
