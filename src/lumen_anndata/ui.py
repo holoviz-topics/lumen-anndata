@@ -2,7 +2,7 @@ from pathlib import Path
 
 import lumen.ai as lmai
 
-from lumen.ai.controls import UploadControls
+from lumen.ai.controls import UploadSourceControls
 
 from lumen_anndata.analysis import (
     ClustermapVisualization, LeidenComputation, ManifoldMapVisualization,
@@ -38,7 +38,7 @@ def build_ui():
     ui = lmai.ExplorerUI(
         agents=[lmai.agents.ChatAgent(tools=[doc_lookup], template_overrides={"main": {"instructions": INSTRUCTIONS}})],
         analyses=[ClustermapVisualization, ManifoldMapVisualization, LeidenComputation, RankGenesGroupsTracksplot],
-        source_controls=[CellXGeneSourceControls, UploadControls],
+        source_controls=[CellXGeneSourceControls, UploadSourceControls],
         upload_handlers={"h5ad": upload_h5ad},
         log_level="DEBUG",
     )
