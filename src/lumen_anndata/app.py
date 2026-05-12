@@ -12,7 +12,7 @@ pn.extension("filedropper", "jsoneditor")
 llm = lmai.llm.OpenAI(
     api_key=os.environ["HF_API_TOKEN"],
     endpoint="https://router.huggingface.co/v1",
-    model_kwargs={"default": {"model": "google/gemma-4-31B-it"}},
+    model_kwargs={"default": {"model": "google/gemma-4-26B-A4B-it:novita"}},
 )
 
 build_ui(llm=llm).servable()
