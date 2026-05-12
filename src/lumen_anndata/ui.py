@@ -1,5 +1,3 @@
-import os
-
 from pathlib import Path
 
 import lumen.ai as lmai
@@ -36,13 +34,6 @@ def build_ui(llm: lmai.llm.Llm | None = None) -> lmai.ExplorerUI:
     db_uri = str(Path(__file__).parent / "embeddings" / "scanpy.db")
     vector_store = lmai.vector_store.DuckDBVectorStore(uri=db_uri, embeddings=lmai.embeddings.HuggingFaceEmbeddings())
     doc_lookup = lmai.tools.VectorLookupTool(vector_store=vector_store, n=3)
-    if llm is None:
-        llm = lmai.llm.OpenAI(
-            api_key=os.environ["HF_API_TOKEN"],
-            endpoint="https://router.huggingface.co/v1",
-            model_kwargs={"default": {"model": "google/gemma-4-31B-it"}},
-        )
-
     ui = lmai.ExplorerUI(
         llm=llm,
         agents=[lmai.agents.ChatAgent(tools=[doc_lookup], template_overrides={"main": {"instructions": INSTRUCTIONS}})],
