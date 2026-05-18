@@ -1,6 +1,3 @@
-import os
-
-import lumen.ai as lmai
 import panel as pn
 
 from lumen_anndata.ui import build_ui
