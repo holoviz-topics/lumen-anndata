@@ -34,6 +34,7 @@ def build_ui(llm: lmai.llm.Llm | None = None) -> lmai.ExplorerUI:
     db_uri = str(Path(__file__).parent / "embeddings" / "scanpy.db")
     vector_store = lmai.vector_store.DuckDBVectorStore(uri=db_uri, embeddings=lmai.embeddings.HuggingFaceEmbeddings())
     doc_lookup = lmai.tools.VectorLookupTool(vector_store=vector_store, n=3)
+    llm = llm or lmai.llm.OpenAI()
     ui = lmai.ExplorerUI(
         llm=llm,
         agents=[lmai.agents.ChatAgent(tools=[doc_lookup], template_overrides={"main": {"instructions": INSTRUCTIONS}})],

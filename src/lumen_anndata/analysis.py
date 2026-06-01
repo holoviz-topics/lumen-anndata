@@ -2,8 +2,9 @@ from functools import partial
 
 import param
 
+from anndata.acc import A
 from holoviews import Dataset
-from hv_anndata import A, register
+from hv_anndata import register
 from lumen.ai.analysis import Analysis
 from lumen.ai.utils import describe_data
 from lumen.filters import ConstantFilter

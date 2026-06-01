@@ -6,7 +6,7 @@ import param
 matplotlib.use("Agg")
 import scanpy as sc
 
-from hv_anndata import ClusterMap, ManifoldMap
+from hv_anndata.plotting import ClusterMap, ManifoldMap
 from lumen.views import View
 
 
