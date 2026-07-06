@@ -37,11 +37,11 @@ classifiers = [
 dependencies = [
     "packaging",
     "panel >=1.8.9",
-    "lumen[ai-transformers] >=1.1.0",
-    "anndata >=0.11.4",
+    "lumen[ai-transformers] >=1.2.0",
+    "anndata >=0.13.0rc3",
     "pooch >=1.8.2",
     "scanpy >=1.11.1",
-    "hv-anndata >=0.0.1",
+    "hv-anndata[panel] >=0.0.3a1",
     "cellxgene_census >=1.17.0",
     "panel-material-ui >=0.9.0"
 ]
