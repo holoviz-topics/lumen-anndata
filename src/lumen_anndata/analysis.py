@@ -3,7 +3,7 @@ from functools import partial
 import param
 
 from anndata.acc import A
-from holoviews import Dataset
+from holoviews import Dataset, renderer
 from hv_anndata import register
 from lumen.ai.analysis import Analysis
 from lumen.ai.utils import describe_data
@@ -20,6 +20,7 @@ from .views import (
     ClustermapPanel, ManifoldMapPanel, RankGenesGroupsTracksplotPanel,
 )
 
+renderer("bokeh").webgl = False
 register()
 
 
