@@ -53,10 +53,15 @@ class ManifoldMapPanel(AnnDataPanel):
 
     view_type = "manifold_map"
 
+    # Holds the rendered ManifoldMap so selection callbacks can read the
+    # dimensions (reduction/axes) currently on display.
+    _manifold_map = None
+
     def _render_visualization(self):
         if self._ls is None:
             self._init_link_selections()
-        return ManifoldMap(adata=self.adata, ls=self._ls)
+        self._manifold_map = ManifoldMap(adata=self.adata, ls=self._ls)
+        return self._manifold_map
 
 
 class RankGenesGroupsTracksplotPanel(AnnDataPanel):
