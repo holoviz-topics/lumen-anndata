@@ -178,6 +178,10 @@ class RankGenesGroupsTracksplot(AnnDataAnalysis):
         Number of top genes to display in the tracksplot.""",
     )
 
+    @classmethod
+    async def applies(cls, pipeline) -> bool:
+        return (await super().applies(pipeline)) and len(pipeline.source.get(pipeline.table, return_type="anndata").obs) < 10000
+
     def __call__(self, pipeline, context):
         if not self.param.groupby.objects:
             source = pipeline.source
@@ -196,6 +200,10 @@ class RankGenesGroupsTracksplot(AnnDataAnalysis):
 
 class ClustermapVisualization(AnnDataAnalysis):
     """Create a clustered heatmap showing mean expression by groups, following scanpy paradigm."""
+
+    @classmethod
+    async def applies(cls, pipeline) -> bool:
+        return (await super().applies(pipeline)) and len(pipeline.source.get(pipeline.table, return_type="anndata").obs) < 10000
 
     def __call__(self, pipeline, context):
         # Simple validation that we have the required data
