@@ -55,9 +55,7 @@ class ManifoldMapPanel(AnnDataPanel):
 
     def __init__(self, **params):
         super().__init__(**params)
-        # Set in _render_visualization; lets selection callbacks read the
-        # dimensions (reduction/axes) currently on display.
-        self._manifold_map = None
+        self._manifold_map = None  # set on render; read by selection callbacks
 
     def _render_visualization(self):
         if self._ls is None:
