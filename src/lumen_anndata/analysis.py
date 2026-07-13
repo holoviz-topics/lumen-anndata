@@ -2,12 +2,11 @@ from functools import partial
 
 import param
 
-from anndata.acc import A
 from holoviews import Dataset, renderer
 from hv_anndata import register
 from lumen.ai.analysis import Analysis
 from lumen.ai.utils import describe_data
-from lumen.filters import ConstantFilter
+from lumen.transforms import SQLFilter
 from panel.layout import Column
 from panel.pane.markup import Markdown
 from panel_material_ui import Button
@@ -22,6 +21,8 @@ from .views import (
 
 renderer("bokeh").webgl = False
 register()
+
+SELECTION_TABLE = "obs_linked_selection"
 
 
 class AnnDataAnalysis(Analysis):
@@ -54,32 +55,71 @@ class ManifoldMapVisualization(AnnDataAnalysis):
         instance = super().instance(**params)
         instance._initialized_selection = False
         instance._chat_message = None
-        instance._filt = None
         instance._reset_col = None
+        instance._selection_markdown = None
+        instance._pipeline = None
         return instance
 
     def __call__(self, pipeline, context):
+        self._pipeline = pipeline
         self._mm = ManifoldMapPanel(pipeline=pipeline)
         self._mm.param.watch(partial(self._sync_selection, pipeline), 'selection_expr')
         return self._mm
 
     def _reset_selection(self, event):
-        source = self._memory['source']
-        source._obs_ids_selected = None
+        # Republish the original pipeline so downstream reverts to it.
+        self._dynamic_provides = {
+            'source': self._pipeline.source,
+            'pipeline': self._pipeline,
+            'table': self._pipeline.table,
+        }
         self._mm.selection_expr = None
         self._mm._ls.selection_expr = None
         self._initialized_selection = False
+        if self._selection_markdown is not None:
+            self._selection_markdown.object = "Selection cleared."
 
     async def _sync_selection(self, pipeline, event):
         if event.new is None:
             return
 
+        # Apply the lasso to the data the map is currently showing (its own
+        # adata), so selecting on an already-filtered map narrows that subset
+        # instead of re-selecting against the full obs table. obs_id is the obs
+        # index promoted to a column, so obs_names gives the selected ids.
+        adata = self._mm.adata
+        ds = Dataset(adata, self._mm._manifold_map.current_kdims())
+        mask = event.new.apply(ds)
+        obs_ids = [str(obs_id) for obs_id in adata.obs_names[mask]]
+
+        # Materialize the selection keyed by obs_id off base obs; obs_id is a
+        # global identity, so filtering base obs by the ids selected on the
+        # current view yields the narrowed subset regardless of current table.
+        # SQLFilter handles quoting/dialect (as AnnDataSource does for obs_id);
+        # an empty list is a no-op there, so guard it with an empty result.
+        base_sql = 'SELECT * FROM "obs"'
+        tables = dict(pipeline.source.tables)
+        if obs_ids:
+            tables[SELECTION_TABLE] = SQLFilter(
+                conditions=[("obs_id", obs_ids)]
+            ).apply(base_sql)
+        else:
+            tables[SELECTION_TABLE] = f'SELECT * FROM ({base_sql}) WHERE FALSE'
+        source = pipeline.source.create_sql_expr_source(tables)
+
+        # Publish through the analysis out-context (Analysis._dynamic_provides);
+        # the input context is a snapshot, so mutating it wouldn't propagate.
+        # `source` is included so it registers for downstream discovery.
+        self._dynamic_provides = {
+            'source': source,
+            'pipeline': pipeline.clone(
+                source=source, table=SELECTION_TABLE, schema=None
+            ),
+            'table': SELECTION_TABLE,
+            'data': await describe_data(source.get(SELECTION_TABLE)),
+        }
+
         if not self._initialized_selection:
-            source = pipeline.source.create_sql_expr_source(pipeline.source.tables)
-            self._memory['source'] = source
-            self._memory['pipeline'] = selected = pipeline.clone(source=source)
-            self._filt = ConstantFilter(field='obs_id')
-            selected.add_filter(self._filt)
             button = Button(
                 label="Reset Selection",
                 on_click=self._reset_selection
@@ -87,20 +127,10 @@ class ManifoldMapVisualization(AnnDataAnalysis):
             self._selection_markdown = Markdown()
             self._reset_col = Column(self._selection_markdown, button)
             self._initialized_selection = True
-        else:
-            source = self._memory['source']
-
-        adata = pipeline.source.get('obs', return_type='anndata')
-        dr_options = list(adata.obsm.keys())
-        var = dr_options[0]
-        ds = Dataset(adata, [A.obsm[var][:, 0], A.obsm[var][:, 1]])
-        mask = event.new.apply(ds)
-        source._obs_ids_selected = self._filt.value = list(pipeline.data[mask].obs_id)
         self._selection_markdown.object = (
-            f"Selected {len(source._obs_ids_selected)} points, "
+            f"Selected {len(obs_ids)} points into table `{SELECTION_TABLE}`, "
             "which will be used for subsequent calls."
         )
-        self._memory["data"] = await describe_data(pipeline.data[mask])
         self._chat_message = self.interface.stream(self._reset_col, user="Assistant", message=self._chat_message)
 
 
