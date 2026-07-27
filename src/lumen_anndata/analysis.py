@@ -50,6 +50,8 @@ class ManifoldMapVisualization(AnnDataAnalysis):
     unless explicitly otherwise specified by the user.
     """
 
+    icon = "scatter_plot"
+
     @bothmethod
     def instance(self_or_cls, **params):
         instance = super().instance(**params)
@@ -138,6 +140,8 @@ class ManifoldMapVisualization(AnnDataAnalysis):
 class LeidenComputation(AnnDataAnalysis):
     """Perform Leiden clustering."""
 
+    icon = "hub"
+
     category = param.Selector(default=None, objects=[], doc="Category for the analysis.")
 
     random_state = param.Integer(
@@ -197,6 +201,8 @@ class LeidenComputation(AnnDataAnalysis):
 class RankGenesGroupsTracksplot(AnnDataAnalysis):
     """Create a tracksplot visualization of top differentially expressed genes from rank_genes_groups analysis."""
 
+    icon = "stacked_line_chart"
+
     compute_required = param.Boolean(doc="""
         Whether to compute rank_genes_groups on the adata before rendering.""")
 
@@ -227,6 +233,8 @@ class RankGenesGroupsTracksplot(AnnDataAnalysis):
 
 class ClustermapVisualization(AnnDataAnalysis):
     """Create a clustered heatmap showing mean expression by groups, following scanpy paradigm."""
+
+    icon = "grid_on"
 
     def __call__(self, pipeline, context):
         # Simple validation that we have the required data
