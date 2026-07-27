@@ -122,7 +122,8 @@ class ManifoldMapVisualization(AnnDataAnalysis):
         if not self._initialized_selection:
             button = Button(
                 label="Reset Selection",
-                on_click=self._reset_selection
+                on_click=self._reset_selection,
+                margin=(0, 0, 15, 15)
             )
             self._selection_markdown = Markdown()
             self._reset_col = Column(self._selection_markdown, button)
