@@ -98,23 +98,40 @@ class ManifoldMapVisualization(AnnDataAnalysis):
         # SQLFilter handles quoting/dialect (as AnnDataSource does for obs_id);
         # an empty list is a no-op there, so guard it with an empty result.
         base_sql = 'SELECT * FROM "obs"'
-        tables = dict(pipeline.source.tables)
         if obs_ids:
-            tables[SELECTION_TABLE] = SQLFilter(
+            selection_sql = SQLFilter(
                 conditions=[("obs_id", obs_ids)]
             ).apply(base_sql)
         else:
-            tables[SELECTION_TABLE] = f'SELECT * FROM ({base_sql}) WHERE FALSE'
-        source = pipeline.source.create_sql_expr_source(tables)
+            selection_sql = f'SELECT * FROM ({base_sql}) WHERE FALSE'
+
+        # Pass only the selection table: create_sql_expr_source merges the
+        # source's existing tables (upsert), so obs/var/X/etc. stay available in
+        # the new source, while passing just this one avoids the source's
+        # refine-ids loop re-executing every table into pandas per selection.
+        source = pipeline.source.create_sql_expr_source(
+            {SELECTION_TABLE: selection_sql}
+        )
+
+        # Reuse the existing schema instead of letting Pipeline recompute it.
+        # obs_linked_selection is a row-subset of obs (SELECT * FROM "obs"
+        # WHERE ...), so its per-column schema is identical to the pipeline's.
+        # schema=None makes Pipeline.__init__ call source.get_schema(
+        # SELECTION_TABLE), which profiles every column by re-running the large
+        # IN-clause query many times (tens of seconds); reusing the
+        # already-computed schema avoids that entirely.
+        cloned = pipeline.clone(
+            source=source,
+            table=SELECTION_TABLE,
+            schema=pipeline.schema or source.get_schema("obs"),
+        )
 
         # Publish through the analysis out-context (Analysis._dynamic_provides);
         # the input context is a snapshot, so mutating it wouldn't propagate.
         # `source` is included so it registers for downstream discovery.
         self._dynamic_provides = {
             'source': source,
-            'pipeline': pipeline.clone(
-                source=source, table=SELECTION_TABLE, schema=None
-            ),
+            'pipeline': cloned,
             'table': SELECTION_TABLE,
             'data': await describe_data(source.get(SELECTION_TABLE)),
         }
