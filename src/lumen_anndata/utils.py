@@ -2,12 +2,10 @@ from io import BytesIO
 
 import anndata as ad
 
-from lumen.ai.memory import memory
-
 from lumen_anndata.source import AnnDataSource
 
 
-def upload_h5ad(file: BytesIO, table: str, filename: str) -> int:
+def upload_h5ad(context, file: BytesIO, table: str, filename: str) -> AnnDataSource | None:
     """
     Uploads an h5ad file and returns an AnnDataSource.
     """
@@ -19,8 +17,7 @@ def upload_h5ad(file: BytesIO, table: str, filename: str) -> int:
                 src.metadata[table] = {}
             if "filename" not in src.metadata[table]:
                 src.metadata[table]["filename"] = filename
-        memory["source"] = src
-        return 1
+        return src
     except Exception as e:
         print(f"Error uploading h5ad file: {e}")  # noqa: T201
-        return 0
+        return None

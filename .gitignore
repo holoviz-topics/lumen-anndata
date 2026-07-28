@@ -185,3 +185,4 @@ cython_debug/
 *.wal
 .pixi
 pixi.lock
+!src/lumen_anndata/embeddings/*.db

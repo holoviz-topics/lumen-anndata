@@ -6,7 +6,7 @@ import param
 matplotlib.use("Agg")
 import scanpy as sc
 
-from hv_anndata import ClusterMap, Dotmap, ManifoldMap
+from hv_anndata.plotting import ClusterMap, DotMap, ManifoldMap
 from lumen.views import View
 
 
@@ -53,10 +53,15 @@ class ManifoldMapPanel(AnnDataPanel):
 
     view_type = "manifold_map"
 
+    def __init__(self, **params):
+        super().__init__(**params)
+        self._manifold_map = None  # set on render; read by selection callbacks
+
     def _render_visualization(self):
         if self._ls is None:
             self._init_link_selections()
-        return ManifoldMap(adata=self.adata, ls=self._ls)
+        self._manifold_map = ManifoldMap(adata=self.adata, ls=self._ls)
+        return self._manifold_map
 
 
 class RankGenesGroupsTracksplotPanel(AnnDataPanel):

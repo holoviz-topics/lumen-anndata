@@ -2,114 +2,107 @@ import asyncio
 
 from io import BytesIO
 
-import cellxgene_census
 import panel as pn
 import param
 import s3fs
 
-from lumen.ai.controls import SourceControls
+from lumen.ai.controls import CatalogSourceControls, SourceResult
+from panel.pane import Markdown
+
+from .utils import upload_h5ad
 
 
-class CellXGeneSourceControls(SourceControls):
-    """Simple tabulator browser for CELLxGENE Census datasets"""
-
-    active = param.Integer(default=1, doc="Active tab index")
+class CellXGeneSourceControls(CatalogSourceControls):
+    """Browser for CELLxGENE Census datasets."""
 
     census_version = param.String("2025-01-30")
 
-    input_placeholder = param.String(
-        default="Select datasets by clicking the download icon, or input custom URLs, delimited by new lines",
-        doc="Placeholder text for input field",
-    )
-
     uri = param.String(default=None, doc="Base URI for CELLxGENE Census")
-
-    status = param.String(
-        default="*Click on download icons to ingest datasets.*",
-        doc="Message displayed in the UI",
-    )
 
     soma_kwargs = param.Dict(default={}, doc="Additional parameters for soma connection")
 
-    def __init__(self, **params):
-        super().__init__(**params)
-        filters = {
-            "collection_name": {"type": "input", "func": "like", "placeholder": "Enter name"},
-            "dataset_title": {"type": "input", "func": "like", "placeholder": "Enter title"},
-            "dataset_total_cell_count": {"type": "number", "func": ">=", "placeholder": "Enter min cells"},
-            "dataset_id": {"type": "input", "func": "like", "placeholder": "Enter ID"},
-        }
-        self._tabulator = pn.widgets.Tabulator(
-            page_size=5,
-            pagination="local",
-            sizing_mode="stretch_width",
-            show_index=False,
-            # Client-side filtering in headers
-            header_filters=filters,
-            # Row content function for technical details
-            row_content=self._get_row_content,
-            # Column configuration
-            titles={
-                "collection_name": "Collection",
-                "dataset_title": "Dataset Title",
-                "dataset_total_cell_count": "Cells",
-                "dataset_id": "Dataset ID",
-            },
-            buttons={"download": '<i class="fa fa-download"></i>'},
-            # Column widths
-            widths={"download": "2%", "collection_name": "40%", "dataset_title": "35%", "dataset_total_cell_count": "8%", "dataset_id": "10%"},
-            # Formatters
-            formatters={"dataset_total_cell_count": {"type": "money", "thousand": ",", "symbol": ""}},
-            # Disable editing
-            editors={"collection_name": None, "dataset_title": None, "dataset_total_cell_count": None, "dataset_id": None},
-            loading=True,
-        )
-        pn.state.onload(self._onload)
+    load_mode = "manual"  # Row clicks trigger loading, not a button
 
-    @pn.cache
-    def _load_datasets_catalog(self, census_version: str, uri: str, **soma_kwargs):
-        with cellxgene_census.open_soma(census_version=census_version, uri=uri, **soma_kwargs) as census:
-            return census["census_info"]["datasets"].read().concat().to_pandas()
+    label = '<span class="material-icons" style="vertical-align: middle;">biotech</span> CELLxGENE Census Datasets'
 
-    def _onload(self):
-        try:
-            self.datasets_df = self._load_datasets_catalog(self.census_version, self.uri, **self.soma_kwargs)
-        except Exception as e:
-            pn.state.notifications.error(f"Failed to load datasets: {e}")
-            self.status = "Failed to load datasets. Please check your connection or parameters."
-            return
-        # Select only user-friendly columns for the main table
-        display_df = self.datasets_df[
-            [
-                "collection_name",
-                "dataset_title",
-                "dataset_total_cell_count",
-                "dataset_id",  # Keep this for row content lookup
-            ]
-        ]
-        self._tabulator.on_click(self._ingest_h5ad)
-        self._tabulator.param.update(
-            value=display_df,
-            loading=False,
+    display_columns = param.Dict(default={
+        "collection_name": {"title": "Collection", "width": "40%"},
+        "dataset_title":   {"title": "Dataset Title", "width": "35%"},
+        "dataset_total_cell_count": {
+            "title": "Cells",
+            "width": "8%",
+            "formatter": {"type": "money", "thousand": ",", "symbol": ""},
+        },
+        "dataset_id": {"title": "Dataset ID", "width": "10%"},
+    })
+
+    filter_columns = param.Dict(default={
+        "collection_name":          {"type": "input",  "func": "like", "placeholder": "Enter name"},
+        "dataset_title":            {"type": "input",  "func": "like", "placeholder": "Enter title"},
+        "dataset_total_cell_count": {"type": "number", "func": ">=",   "placeholder": "Enter min cells"},
+        "dataset_id":               {"type": "input",  "func": "like", "placeholder": "Enter ID"},
+    })
+
+    search_columns = param.List(default=[
+        "collection_name",
+        "dataset_title",
+        "dataset_id",
+    ])
+
+    detail_columns = param.List(default=[
+        "dataset_version_id",
+        "collection_doi",
+        "collection_doi_label",
+        "dataset_h5ad_path",
+        "dataset_total_cell_count",
+    ])
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # CatalogSourceControls contract
+    # ──────────────────────────────────────────────────────────────────────────
+
+    async def _load_catalog(self):
+        """Fetch and return the CELLxGENE datasets catalog as a DataFrame."""
+        return await asyncio.to_thread(
+            self._fetch_datasets_catalog,
+            self.census_version,
+            self.uri,
+            **self.soma_kwargs,
         )
-        # self._czi_controls.loading = False
+
+    async def _fetch_entry(self, entry) -> SourceResult:
+        """Download and process a single CELLxGENE dataset."""
+        import cellxgene_census
+
+        dataset_id = entry["dataset_id"]
+        dataset_title = entry["dataset_title"]
+
+        self.progress(f"Fetching S3 URL for {dataset_title}...")
+        await asyncio.sleep(0.01)
+
+        locator = cellxgene_census.get_source_h5ad_uri(
+            dataset_id, census_version=self.census_version
+        )
+
+        self.progress(f"Downloading {dataset_title}...")
+        file_buffer = await self._download_file(locator)
+
+        self.progress(f"Processing {dataset_title}...")
+        source = upload_h5ad(self.context, file_buffer, dataset_title, dataset_title)
+
+        if source is None:
+            return SourceResult.empty(f"Failed to process {dataset_title}")
+
+        return SourceResult.from_source(
+            source,
+            message=f"Dataset '{dataset_title}' loaded successfully.",
+        )
 
     def _get_row_content(self, row):
-        """
-        Get technical details for expanded row content
-
-        Args:
-            row (pd.Series): The row data from the main table
-
-        Returns:
-            pn.pane: Panel object with technical details
-        """
+        """Generate expanded row content with technical details."""
         dataset_id = row["dataset_id"]
+        full_info = self.catalog_df[self.catalog_df["dataset_id"] == dataset_id].iloc[0]
 
-        # Get full dataset info from the cached dataframe
-        full_info = self.datasets_df[self.datasets_df["dataset_id"] == dataset_id].iloc[0]
-
-        # Build technical details HTML
         lines = [
             "Technical Details",
             "",
@@ -123,48 +116,64 @@ class CellXGeneSourceControls(SourceControls):
             f"  H5AD Path: {full_info.get('dataset_h5ad_path', 'N/A')}",
             f"  Total Cells: {full_info.get('dataset_total_cell_count', 'N/A'):,}",
         ]
-        text_content = "\n".join(lines)
-        return pn.pane.Markdown(text_content, sizing_mode="stretch_width", styles={"color": "black"})
-
-    async def _ingest_h5ad(self, event):
-        """
-        Uploads an h5ad file and returns an AnnDataSource.
-        """
-        with self._tabulator.param.update(loading=True), self.param.update(disabled=True):
-            await asyncio.sleep(0.05)  # yield the event loop to ensure UI updates
-            dataset_id = self.datasets_df.loc[event.row, "dataset_id"]
-            dataset_title = self.datasets_df.loc[event.row, "dataset_title"]
-            locator = cellxgene_census.get_source_h5ad_uri(dataset_id, census_version=self.census_version)
-            # Initialize s3fs
-            fs = s3fs.S3FileSystem(
-                config_kwargs={"user_agent": "lumen-anndata"},
-                anon=True,
-                cache_regions=True,
-            )
-            buffer = BytesIO()
-            with fs.open(locator["uri"], "rb") as f:
-                while True:
-                    chunk = f.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    buffer.write(chunk)
-            buffer.seek(0)  # reset for reading
-            self.downloaded_files = {f"{dataset_title}.h5ad": buffer}
-            self.param.trigger("trigger_add")  # automatically trigger the add
-            self.status = f"Dataset '{dataset_title}' has been added successfully."
-
-    def __panel__(self):
-        self._czi_controls = pn.Column(
-            pn.pane.Markdown(
-                object="*Click on download icons to ingest datasets.*",
-                margin=0,
-            ),
-            self._tabulator,
-            loading=True
+        return Markdown(
+            "\n".join(lines),
+            sizing_mode="stretch_width",
+            styles={"color": "black"},
         )
-        original_controls = super().__panel__()
-        # Append to input tabs; add check to prevent duplicate
-        if len(original_controls[0]) == 2:
-            original_controls[0].append(("CELLxGENE Census Datasets", self._czi_controls))
-            original_controls[0].active = len(original_controls[0]) - 1
-        return original_controls
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # CELLxGENE-specific helpers
+    # ──────────────────────────────────────────────────────────────────────────
+
+    @pn.cache
+    def _fetch_datasets_catalog(self, census_version: str, uri: str, **soma_kwargs):
+        """Fetch and cache the datasets catalog (synchronous, run in thread)."""
+        import cellxgene_census
+        with cellxgene_census.open_soma(
+            census_version=census_version, uri=uri, **soma_kwargs
+        ) as census:
+            return census["census_info"]["datasets"].read().concat().to_pandas()
+
+    async def _download_file(self, locator, chunk_size=5_000_000, max_concurrency=8):
+        """Download file from S3 with progress reporting."""
+        fs = s3fs.S3FileSystem(
+            config_kwargs={"user_agent": "lumen-anndata"},
+            anon=True,
+            asynchronous=True,
+            cache_regions=True,
+        )
+        await fs.set_session()
+
+        info = await fs._info(locator["uri"])
+        total_size = int(info["size"])
+
+        self.progress("Downloading...", current=0, total=total_size)
+        downloaded = 0
+
+        buf = BytesIO()
+        buf.seek(total_size - 1)
+        buf.write(b"\0")
+        buf.seek(0)
+
+        sem = asyncio.Semaphore(max_concurrency)
+
+        async def fetch_range(start, end):
+            nonlocal downloaded
+            async with sem:
+                data = await fs._cat_file(locator["uri"], start=start, end=end)
+                buf.seek(start)
+                buf.write(data)
+                downloaded += len(data)
+                self.progress(current=downloaded, total=total_size)
+                await asyncio.sleep(0.01)
+
+        ranges = [
+            (start, min(start + chunk_size, total_size))
+            for start in range(0, total_size, chunk_size)
+        ]
+        tasks = [asyncio.create_task(fetch_range(s, e)) for s, e in ranges]
+        await asyncio.gather(*tasks)
+
+        buf.seek(0)
+        return buf

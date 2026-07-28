@@ -1,0 +1,2 @@
+# This file ensures the embeddings directory is included in the package
+# Actual .db files are generated at runtime or downloaded separately

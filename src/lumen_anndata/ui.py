@@ -2,6 +2,8 @@ from pathlib import Path
 
 import lumen.ai as lmai
 
+from lumen.ai.controls import UploadSourceControls
+
 from lumen_anndata.analysis import (
     ClustermapVisualization, DotMapVisualization, LeidenComputation,
     ManifoldMapVisualization, RankGenesGroupsTracksplot,
@@ -28,19 +30,18 @@ If you cannot find a match or give a confident answer, acknowledge it
 and suggest other relevant entries that might help the user.
 """
 
-
-def build_ui():
+def build_ui(llm: lmai.llm.Llm | None = None) -> lmai.ExplorerUI:
     db_uri = str(Path(__file__).parent / "embeddings" / "scanpy.db")
     vector_store = lmai.vector_store.DuckDBVectorStore(uri=db_uri, embeddings=lmai.embeddings.HuggingFaceEmbeddings())
     doc_lookup = lmai.tools.VectorLookupTool(vector_store=vector_store, n=3)
-
+    llm = llm or lmai.llm.OpenAI()
     ui = lmai.ExplorerUI(
+        llm=llm,
         agents=[lmai.agents.ChatAgent(tools=[doc_lookup], template_overrides={"main": {"instructions": INSTRUCTIONS}})],
-        table_upload_callbacks={
-            ".h5ad": upload_h5ad,
-        },
         analyses=[ClustermapVisualization, DotMapVisualization, ManifoldMapVisualization, LeidenComputation, RankGenesGroupsTracksplot],
-        source_controls=CellXGeneSourceControls,
+        source_controls=[CellXGeneSourceControls, UploadSourceControls],
+        upload_handlers={"h5ad": upload_h5ad},
         log_level="DEBUG",
     )
+
     return ui

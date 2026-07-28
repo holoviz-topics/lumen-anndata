@@ -20,7 +20,7 @@ from anndata import AnnData
 from lumen.config import config
 from lumen.serializers import Serializer
 from lumen.sources.duckdb import DuckDBSource
-from lumen.transforms import SQLFilter, SQLPreFilter
+from lumen.transforms import SQLFilter, SQLPreFilter, SQLSelectFrom
 from lumen.util import resolve_module_reference
 from sqlglot import parse_one
 from sqlglot.expressions import Table
@@ -63,6 +63,8 @@ class AnnDataSource(DuckDBSource):
         saved under the `.lumen_anndata_cache` directory,  or in `/tmp` if there is a PermissionError.
         """
     )
+
+    sql_expr = param.String(default="SELECT * FROM {table}", doc="The SQL expression to execute.")
 
     source_type = "anndata"
 
@@ -231,10 +233,9 @@ class AnnDataSource(DuckDBSource):
 
         original_str_index = original_adata_index.astype(str)
 
-        if isinstance(selected_ids, (pd.Series, np.ndarray)):
-            unique_selected_ids = pd.Index(selected_ids).unique().astype(str)
-        elif isinstance(selected_ids, list):
-            unique_selected_ids = pd.Index(list(set(selected_ids))).astype(str)
+        # pd.Index accepts Series, ndarray, list, Index and pandas extension
+        # arrays (e.g. ArrowStringArray), so a single path handles every case.
+        unique_selected_ids = pd.Index(selected_ids).unique().astype(str)
 
         present_ids = original_str_index.intersection(unique_selected_ids)
         return sorted(present_ids.to_list())
@@ -815,3 +816,17 @@ class AnnDataSource(DuckDBSource):
 
         # Use parent class from_spec for everything else
         return super().from_spec(spec)
+
+    def get_sql_expr(self, table: str | dict):
+        """
+        Returns the SQL expression corresponding to a particular table.
+        """
+        tables_dict = {}
+        if isinstance(self.tables, dict):
+            if table in self.tables:
+                tables_dict[table] = self.tables[table]
+            else:
+                tables_dict = self.tables
+
+        sql_expr = SQLSelectFrom(sql_expr=self.sql_expr, tables=tables_dict, read=self.dialect).apply(table)
+        return sql_expr

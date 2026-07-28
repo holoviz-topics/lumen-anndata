@@ -1,0 +1,16 @@
+# Include all Python files
+recursive-include src *.py
+
+# Include type information
+include src/lumen_anndata/py.typed
+
+# Include the embeddings database
+include src/lumen_anndata/embeddings/scanpy.db
+
+# Include placeholder files
+include src/lumen_anndata/embeddings/.gitkeep
+
+# Exclude other unnecessary files
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .DS_Store
