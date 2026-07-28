@@ -7,6 +7,7 @@ from hv_anndata import register
 from lumen.ai.analysis import Analysis
 from lumen.ai.utils import describe_data
 from lumen.transforms import SQLFilter
+from lumen.util import get_dataframe_schema
 from panel.layout import Column
 from panel.pane.markup import Markdown
 from panel_material_ui import Button
@@ -109,16 +110,30 @@ class ManifoldMapVisualization(AnnDataAnalysis):
             tables[SELECTION_TABLE] = f'SELECT * FROM ({base_sql}) WHERE FALSE'
         source = pipeline.source.create_sql_expr_source(tables)
 
+        # Fetch the selection once and derive both the schema and the summary
+        # from it. Leaving schema=None makes Pipeline.__init__ call
+        # source.get_schema(SELECTION_TABLE), which issues a DISTINCT per
+        # column plus a count and a min/max; the selection's stored SQL
+        # expression carries one literal per selected obs_id, so each of those
+        # ~41 queries re-executes it (measured: 33s for 37k rows). Describing
+        # the frame we already hold gives the same schema -- with the subset's
+        # real ranges and enums, not the parent's -- for the cost of one query.
+        selection_df = source.get(SELECTION_TABLE)
+        schema = get_dataframe_schema(selection_df)["items"]["properties"]
+        # get_dataframe_schema omits the row count that BaseSQLSource.get_schema
+        # adds, and consumers read it off the schema.
+        schema["__len__"] = len(selection_df)
+
         # Publish through the analysis out-context (Analysis._dynamic_provides);
         # the input context is a snapshot, so mutating it wouldn't propagate.
         # `source` is included so it registers for downstream discovery.
         self._dynamic_provides = {
             'source': source,
             'pipeline': pipeline.clone(
-                source=source, table=SELECTION_TABLE, schema=None
+                source=source, table=SELECTION_TABLE, schema=schema
             ),
             'table': SELECTION_TABLE,
-            'data': await describe_data(source.get(SELECTION_TABLE)),
+            'data': await describe_data(selection_df),
         }
 
         if not self._initialized_selection:
