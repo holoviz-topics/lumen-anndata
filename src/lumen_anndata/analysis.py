@@ -263,7 +263,6 @@ class ClustermapVisualization(AnnDataAnalysis):
     @classmethod
     async def applies(cls, pipeline) -> bool:
         return (await super().applies(pipeline)) and len(pipeline.source.get(pipeline.table, return_type="anndata").obs) < 10000
-    
     def __call__(self, pipeline, context):
         # Simple validation that we have the required data
         source = pipeline.source
