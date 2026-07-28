@@ -230,6 +230,15 @@ class RankGenesGroupsTracksplot(AnnDataAnalysis):
         Number of top genes to display in the tracksplot.""",
     )
 
+    @classmethod
+    async def applies(cls, pipeline) -> bool:
+        # The tracksplot reads adata.uns['rank_genes_groups']; only offer it
+        # once that precompute exists, otherwise rendering raises KeyError.
+        adata = pipeline.source.get(pipeline.table, return_type="anndata")
+        if not await super().applies(pipeline) and len(adata.obs) < 10000:
+            return False
+        return "rank_genes_groups" in adata.uns
+
     def __call__(self, pipeline, context):
         if not self.param.groupby.objects:
             source = pipeline.source
@@ -251,6 +260,9 @@ class ClustermapVisualization(AnnDataAnalysis):
 
     icon = "grid_on"
 
+    @classmethod
+    async def applies(cls, pipeline) -> bool:
+        return (await super().applies(pipeline)) and len(pipeline.source.get(pipeline.table, return_type="anndata").obs) < 10000
     def __call__(self, pipeline, context):
         # Simple validation that we have the required data
         source = pipeline.source
