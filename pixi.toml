@@ -19,8 +19,11 @@ build = ["py312", "build"]
 lint = ["py312", "lint"]
 
 [dependencies]
-anndata = ">=0.11.4"
+anndata = ">=0.13.0"
 bokeh = "*"
+# requests (pulled in transitively) only supports chardet <6; pin it so pip
+# installing lumen's deps can't upgrade to an incompatible chardet 7.x.
+chardet = "<6"
 holoviews = ">=1.17.0"
 hvplot = "*"
 jinja2 = ">3.0"

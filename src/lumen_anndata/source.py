@@ -233,10 +233,9 @@ class AnnDataSource(DuckDBSource):
 
         original_str_index = original_adata_index.astype(str)
 
-        if isinstance(selected_ids, (pd.Series, np.ndarray)):
-            unique_selected_ids = pd.Index(selected_ids).unique().astype(str)
-        elif isinstance(selected_ids, list):
-            unique_selected_ids = pd.Index(list(set(selected_ids))).astype(str)
+        # pd.Index accepts Series, ndarray, list, Index and pandas extension
+        # arrays (e.g. ArrowStringArray), so a single path handles every case.
+        unique_selected_ids = pd.Index(selected_ids).unique().astype(str)
 
         present_ids = original_str_index.intersection(unique_selected_ids)
         return sorted(present_ids.to_list())
