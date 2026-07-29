@@ -5,8 +5,8 @@ import lumen.ai as lmai
 from lumen.ai.controls import UploadSourceControls
 
 from lumen_anndata.analysis import (
-    ClustermapVisualization, LeidenComputation, ManifoldMapVisualization,
-    RankGenesGroupsTracksplot,
+    ClustermapVisualization, DotMapVisualization, LeidenComputation,
+    ManifoldMapVisualization, RankGenesGroupsTracksplot,
 )
 from lumen_anndata.controls import CellXGeneSourceControls
 from lumen_anndata.utils import upload_h5ad
@@ -38,7 +38,7 @@ def build_ui(llm: lmai.llm.Llm | None = None) -> lmai.ExplorerUI:
     ui = lmai.ExplorerUI(
         llm=llm,
         agents=[lmai.agents.ChatAgent(tools=[doc_lookup], template_overrides={"main": {"instructions": INSTRUCTIONS}})],
-        analyses=[ClustermapVisualization, ManifoldMapVisualization, LeidenComputation, RankGenesGroupsTracksplot],
+        analyses=[ClustermapVisualization, DotMapVisualization, ManifoldMapVisualization, LeidenComputation, RankGenesGroupsTracksplot],
         source_controls=[CellXGeneSourceControls, UploadSourceControls],
         upload_handlers={"h5ad": upload_h5ad},
         log_level="DEBUG",
