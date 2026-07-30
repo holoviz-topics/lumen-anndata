@@ -14,7 +14,7 @@ dynamic = ["version"]
 description = 'Lumen for anndata and scanpy'
 readme = "README.md"
 license = { text = "BSD" }
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 authors = [{ name = "holoviz", email = "a.holoviz.dev@gmail.com" }]
 maintainers = [
     { name = "holoviz", email = "a.holoviz.dev@gmail.com" },
