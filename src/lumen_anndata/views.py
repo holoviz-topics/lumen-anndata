@@ -6,7 +6,7 @@ import param
 matplotlib.use("Agg")
 import scanpy as sc
 
-from hv_anndata.plotting import ClusterMap, ManifoldMap
+from hv_anndata.plotting import ClusterMap, Dotmap, ManifoldMap
 from lumen.views import View
 
 
@@ -90,3 +90,25 @@ class ClustermapPanel(View):
     def get_panel(self):
         hv.Store.set_current_backend("bokeh")
         return ClusterMap(adata=self.pipeline.source.get(self.pipeline.table, return_type="anndata"))
+
+
+class DotmapPanel(AnnDataPanel):
+
+    groupby = param.String(default=None, allow_None=True, doc="""
+        Categorical obs column to group cells by; Dotmap falls back to the
+        first categorical column when unset.""")
+
+    marker_genes = param.ClassSelector(class_=(dict, list), default={}, doc="""
+        Marker genes to plot, either a flat list or a mapping of group name to
+        gene list. Also editable in the plot's gene selector.""")
+
+    view_type = "dotmap"
+
+    def _render_visualization(self):
+        dotmap = Dotmap(adata=self.adata, marker_genes=self.marker_genes)
+        # Dotmap._on_input_data fires on init and resets groupby to the first
+        # categorical obs column, so anything passed to the constructor is
+        # discarded; assign afterwards to make it stick.
+        if self.groupby:
+            dotmap.groupby = self.groupby
+        return dotmap
