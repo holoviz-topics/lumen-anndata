@@ -17,13 +17,18 @@ from lumen_anndata.operations import LeidenOperation
 
 from .source import AnnDataSource
 from .views import (
-    ClustermapPanel, ManifoldMapPanel, RankGenesGroupsTracksplotPanel,
+    ClustermapPanel, DotmapPanel, ManifoldMapPanel,
+    RankGenesGroupsTracksplotPanel,
 )
 
 renderer("bokeh").webgl = False
 register()
 
 SELECTION_TABLE = "obs_linked_selection"
+
+
+def _categorical_obs(adata) -> list[str]:
+    return sorted(adata.obs.select_dtypes(include=["category"]).columns)
 
 
 class AnnDataAnalysis(Analysis):
@@ -150,6 +155,45 @@ class ManifoldMapVisualization(AnnDataAnalysis):
             "which will be used for subsequent calls."
         )
         self._chat_message = self.interface.stream(self._reset_col, user="Assistant", message=self._chat_message)
+
+
+class DotmapVisualization(AnnDataAnalysis):
+    """
+    Show marker gene expression across groups of cells as a dotmap, where dot
+    color is mean expression and dot size is the fraction of cells expressing
+    the gene. Use this when the user asks to compare specific genes between
+    cell groups; genes can be supplied here or picked in the plot's selector.
+    """
+
+    icon = "bubble_chart"
+
+    groupby = param.Selector(default=None, objects=[], doc="""
+        Categorical obs column to group cells by.""")
+
+    marker_genes = param.Dict(default={}, doc="""
+        Mapping of group name to marker genes.""")
+
+    @classmethod
+    async def applies(cls, pipeline) -> bool:
+        # Intentionally does not call super(), which gates on an embedding in
+        # obsm; a dotmap only needs a categorical obs column to group by.
+        source = pipeline.source
+        if not isinstance(source, AnnDataSource):
+            return False
+        adata = source.get(pipeline.table, return_type="anndata")
+        return adata is not None and bool(_categorical_obs(adata))
+
+    def __call__(self, pipeline, context):
+        adata = pipeline.source.get(pipeline.table, return_type="anndata")
+        groupby_options = _categorical_obs(adata)
+        self.param.groupby.objects = groupby_options
+        if self.groupby not in groupby_options:
+            self.groupby = groupby_options[0]
+        return DotmapPanel(
+            pipeline=pipeline,
+            groupby=self.groupby,
+            marker_genes=self.marker_genes,
+        )
 
 
 class LeidenComputation(AnnDataAnalysis):
