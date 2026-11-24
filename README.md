@@ -45,7 +45,8 @@ lumen-anndata --flowdash data.h5ad --agent-model openai:gpt-6-luna
 ```
 
 Without a file it serves scanpy's `pbmc68k_reduced`. A starter dashboard shows the cells on
-their default embedding and the cells per annotated group. Try asking the assistant "Take
+their default embedding and the cells per annotated group; box or lasso selecting cells on the
+map narrows the counts to the selection. Try asking the assistant "Take
 just the T cells, cluster them with Leiden and show the marker genes of each subtype". This
 needs Lumen's FlowDash integration and panel-flowdash, which are not released yet.
 

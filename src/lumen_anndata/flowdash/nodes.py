@@ -18,7 +18,7 @@ import param
 
 from hv_anndata import register as register_anndata_interface
 from lumen.flowdash.nodes import (
-    PIPELINE_TYPE, LumenNode, effective_limit, table_pipeline,
+    PIPELINE_TYPE, SOURCE_TYPE, LumenNode, effective_limit, table_pipeline,
 )
 from lumen.pipeline import Pipeline
 from lumen.transforms.base import Iloc
@@ -38,8 +38,8 @@ LEIDEN_ID = "AnnData/leiden"
 TRACKSPLOT_ID = "AnnData/tracksplot"
 CLUSTERMAP_ID = "AnnData/clustermap"
 
-# The table of a manifold map's selection in the source it derives.
-SELECTION_TABLE = "obs_linked_selection"
+# The table of a manifold map's selected cells in the source it outputs.
+SELECTION_TABLE = "selected_cells"
 
 # A clustermap clusters every cell it is given; past this many it is too slow to be useful.
 CLUSTERMAP_MAX_CELLS = 20_000
@@ -160,14 +160,19 @@ class AnnDataNode(LumenNode):
     description=(
         "A UMAP, t-SNE or PCA embedding of the cells of a pipeline over an AnnData source "
         "(e.g. a Lumen table node on obs), coloured by an obs column or a gene. Lasso or box "
-        "selecting cells sets the selected output, a pipeline of just those cells (every cell "
-        "until something is selected), which feeds other views, Leiden clustering, a "
-        "tracksplot or a clustermap."
+        "selecting cells narrows both outputs to those cells; until something is selected "
+        "they hold every cell on the map. The selected output is a pipeline of the cells, for "
+        "views, Leiden clustering, a tracksplot or a clustermap. The selected_source output "
+        f"is a source whose {SELECTION_TABLE} table holds them, for Lumen SQL nodes that "
+        "summarize the selection, e.g. count cells per type."
     ),
     config=["reduction", "color_by", "show_labels"],
     default_size={"width": 760, "height": 540},
     requires=[{"key": "pipeline", "type": PIPELINE_TYPE, "required": True}],
-    provides=[{"key": "selected", "type": PIPELINE_TYPE}],
+    provides=[
+        {"key": "selected", "type": PIPELINE_TYPE},
+        {"key": "selected_source", "type": SOURCE_TYPE},
+    ],
 )
 class ManifoldMapNode(AnnDataNode):
 
@@ -182,7 +187,11 @@ class ManifoldMapNode(AnnDataNode):
     show_labels = param.Boolean(default=False, doc="""
         Whether to label the groups of a categorical colour column.""")
 
+    # The selected cells as a pipeline, None until something is selected.
     _selection = param.Parameter(default=None, precedence=-1)
+
+    # A source whose SELECTION_TABLE holds the selected cells, or every cell on the map.
+    _selection_source = param.Parameter(default=None, precedence=-1)
 
     def __init__(self, **params):
         self._adata_shown = None
@@ -192,6 +201,11 @@ class ManifoldMapNode(AnnDataNode):
     def _refresh(self, *events):
         self._selection = None
         super()._refresh()
+        try:
+            self._selection_source = None if self._object is None else self._cells_source(None)
+        except Exception as exc:
+            self._object, self._selection_source = None, None
+            self._error = self._error_text(exc)
 
     def _resolve(self):
         from hv_anndata.plotting import ManifoldMap
@@ -217,25 +231,38 @@ class ManifoldMapNode(AnnDataNode):
         links.param.watch(lambda event: self._select(view, event.new), "selection_expr")
         return view
 
-    def _select(self, view, expr):
-        adata = self._adata_shown
-        if expr is None or adata is None:
-            self._selection = None
-            return
-        mask = expr.apply(hv.Dataset(adata, view.current_kdims()))
-        ids = [str(obs_id) for obs_id in adata.obs_names[mask]]
+    def _cells_source(self, ids: list[str] | None) -> AnnDataSource:
+        """
+        A source deriving the input's, whose SELECTION_TABLE holds the cells
+        ``ids`` names, or every cell on the map for None.
+        """
         source = self.pipeline.source
         base = 'SELECT * FROM "obs"'
-        tables = dict(source.tables)
-        tables[SELECTION_TABLE] = (
-            SQLFilter(conditions=[("obs_id", ids)]).apply(base) if ids
-            else f"SELECT * FROM ({base}) WHERE FALSE"
-        )
-        derived = source.create_sql_expr_source(tables)
+        if ids is None and self._adata_shown.n_obs < source._adata_store.n_obs:
+            ids = [str(obs_id) for obs_id in self._adata_shown.obs_names]
+        if ids is None:
+            sql = base
+        elif ids:
+            sql = SQLFilter(conditions=[("obs_id", ids)]).apply(base)
+        else:
+            sql = f"SELECT * FROM ({base}) WHERE FALSE"
+        return source.create_sql_expr_source({**source.tables, SELECTION_TABLE: sql})
+
+    def _select(self, view, expr):
+        adata = self._adata_shown
+        if adata is None:
+            return
+        if expr is None:
+            self._selection = None
+            self._selection_source = self._cells_source(None)
+            return
+        mask = expr.apply(hv.Dataset(adata, view.current_kdims()))
+        derived = self._cells_source([str(obs_id) for obs_id in adata.obs_names[mask]])
         frame = derived.get(SELECTION_TABLE)
         self._selection = obs_pipeline(
             derived, SELECTION_TABLE, frame, effective_limit(self.editor, None)
         )
+        self._selection_source = derived
 
     @param.output(param.Parameter)
     @param.depends("_object", "_error", "_selection")
@@ -243,6 +270,13 @@ class ManifoldMapNode(AnnDataNode):
         if self._error is not None:
             return self._value()
         return self._selection if self._selection is not None else self.pipeline
+
+    @param.output(param.Parameter)
+    @param.depends("_object", "_error", "_selection_source")
+    def selected_source(self):
+        if self._error is not None:
+            return self._value()
+        return self._selection_source
 
     def _summary(self) -> str:
         view, adata = self._object, self._adata_shown

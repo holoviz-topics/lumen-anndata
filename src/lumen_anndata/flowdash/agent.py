@@ -6,7 +6,11 @@ from typing import Any
 import pandas as pd
 
 from lumen.agent import _graph
-from lumen.agent.authoring import _place
+from lumen.agent.authoring import _place, _test_run
+from lumen.agent.data import lint
+from lumen.ai.agents.sql import format_exploration_result
+from lumen.flowdash import SQL_ID
+from lumen.flowdash.nodes import effective_limit, primed_result
 from lumen.pipeline import Pipeline
 from panel_flowdash.agent import FlowDashDeps, OperationError
 from pydantic_ai import FunctionToolset, ModelRetry, RunContext
@@ -31,6 +35,9 @@ node of obs, a filter node, or a SQL node whose query keeps obs_id.
 - add_manifold_map shows a UMAP, t-SNE or PCA embedding coloured by an obs column or a gene.
   Its selected output carries the cells the user lassoes on it (every cell until they do),
   so place nodes about "the selected cells" on that output.
+- add_selection_sql places a SQL node summarizing a map's selected cells, which it reads as
+  the table selected_cells; chart it with add_chart. Use it for counts or statistics that
+  should follow the lasso, e.g. cells per type in the selection.
 - add_leiden clusters cells; build on its clustered output, whose new column holds the
   clusters.
 - add_tracksplot shows the top marker genes of each group of an obs column.
@@ -130,6 +137,38 @@ def add_manifold_map(
     )
 
 
+async def add_selection_sql(ctx: RunContext[FlowDashDeps], map: str, name: str, sql: str) -> str:
+    """Place a SQL node over the cells selected on a manifold map, following the selection.
+
+    Args:
+        map: Manifold map node whose selection to query.
+        name: Descriptive snake_case node name.
+        sql: One SELECT or WITH query reading the selected cells as the table selected_cells,
+            whose columns are those of obs.
+    """
+    ops = ctx.deps.ops
+    if map not in _graph.nodes(ops, MANIFOLD_MAP_ID):
+        listed = ", ".join(_graph.nodes(ops, MANIFOLD_MAP_ID)) or "none"
+        raise ModelRetry(f"No manifold map {map!r}. The manifold maps are: {listed}.")
+    try:
+        src = _graph.output(ops, map, "selected_source")
+    except OperationError as exc:
+        raise ModelRetry(str(exc)) from exc
+    limit = effective_limit(ops.editor, None)
+    sql, statement, frame = await _test_run(src, sql, limit)
+    with primed_result(src, statement, frame):
+        _place(ops, SQL_ID, name, {"sql": sql, "table": name}, f"{map}.selected_source", f"{name}.source")
+    try:
+        frame = _graph.output(ops, name, "data")
+    except OperationError as exc:
+        ops.remove_node(name)
+        raise ModelRetry(str(exc)) from exc
+    return (
+        f"Placed SQL node {name!r} over the cells selected on {map!r}, which follows the "
+        f"selection: {format_exploration_result(frame)}\n\nData checks:\n{lint(frame)}"
+    )
+
+
 def add_leiden(ctx: RunContext[FlowDashDeps], data: str, name: str, resolution: float = 1.0) -> str:
     """Place a Leiden clustering of a node's cells; its clustered output adds the cluster column.
 
@@ -187,7 +226,8 @@ def add_clustermap(ctx: RunContext[FlowDashDeps], data: str, name: str) -> str:
 def anndata_toolset() -> FunctionToolset[FlowDashDeps]:
     """describe_cells and the tools placing lumen-anndata's nodes."""
     return FunctionToolset[FlowDashDeps](
-        [describe_cells, add_manifold_map, add_leiden, add_tracksplot, add_clustermap], max_retries=3,
+        [describe_cells, add_manifold_map, add_selection_sql, add_leiden, add_tracksplot, add_clustermap],
+        max_retries=3,
     )
 
 

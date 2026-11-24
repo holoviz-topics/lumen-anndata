@@ -19,7 +19,7 @@ from panel_flowdash.agent.models import parse_models
 from panel_flowdash.app import FlowDashApp
 
 from ..source import AnnDataSource
-from .nodes import MANIFOLD_MAP_ID
+from .nodes import MANIFOLD_MAP_ID, SELECTION_TABLE
 
 COMPONENT_LIBRARY = "lumen_anndata.flowdash"
 
@@ -70,7 +70,10 @@ def _group_column(adata: Any) -> str | None:
 
 
 def starter_dashboard(source: AnnDataSource, ref: str = "data") -> dict[str, Any]:
-    """A dashboard over ``source``: its cells on the default embedding, and the cells per group."""
+    """
+    A dashboard over ``source``: its cells on the default embedding, and the
+    cells per group of those selected on it (all of them until some are).
+    """
     adata = source.get("obs", return_type="anndata")
     group = _group_column(adata)
     default = adata.uns.get("default_embedding")
@@ -90,15 +93,19 @@ def starter_dashboard(source: AnnDataSource, ref: str = "data") -> dict[str, Any
     tiles = [{"instance_id": "cell_map", "index": 0, "width": 100 if group is None else 62, "height": 560}]
     if group is not None:
         items += [
+            # Counts the cells selected on the map, every cell until something is.
             {
-                "instance_id": "cells_per_group", "component_id": SQL_ID, "x": 280, "y": 320,
+                "instance_id": "cells_per_group", "component_id": SQL_ID, "x": 860, "y": 60,
                 "config": {
-                    "sql": f'SELECT "{group}", COUNT(*) AS cells FROM obs GROUP BY 1 ORDER BY 2 DESC',
+                    "sql": (
+                        f'SELECT "{group}", COUNT(*) AS cells FROM {SELECTION_TABLE} '
+                        "GROUP BY 1 ORDER BY 2 DESC"
+                    ),
                     "table": "cells_per_group",
                 },
             },
             {
-                "instance_id": "cells_per_group_chart", "component_id": VIEW_ID, "x": 560, "y": 360,
+                "instance_id": "cells_per_group_chart", "component_id": VIEW_ID, "x": 1140, "y": 60,
                 "config": {"spec": {
                     "mark": "bar",
                     "encoding": {
@@ -109,7 +116,10 @@ def starter_dashboard(source: AnnDataSource, ref: str = "data") -> dict[str, Any
             },
         ]
         edges += [
-            {"source": "dataset", "source_port": "source", "target": "cells_per_group", "target_port": "source"},
+            {
+                "source": "cell_map", "source_port": "selected_source",
+                "target": "cells_per_group", "target_port": "source",
+            },
             {
                 "source": "cells_per_group", "source_port": "pipeline",
                 "target": "cells_per_group_chart", "target_port": "pipeline",

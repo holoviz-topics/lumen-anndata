@@ -9,6 +9,7 @@ pytest.importorskip("panel_flowdash")
 
 import scanpy as sc
 
+from lumen.agent import _graph
 from lumen.flowdash import COMPONENTS as LUMEN_COMPONENTS, SOURCE_ID, TABLE_ID
 from lumen.flowdash.nodes import bind_source, filtered_pipeline, table_pipeline
 from lumen.sources.duckdb import DuckDBSource
@@ -22,8 +23,8 @@ from lumen_anndata.flowdash import (
     nodes as nodes_module, pipeline_adata,
 )
 from lumen_anndata.flowdash.agent import (
-    add_clustermap, add_leiden, add_manifold_map, add_tracksplot,
-    describe_cells,
+    add_clustermap, add_leiden, add_manifold_map, add_selection_sql,
+    add_tracksplot, describe_cells,
 )
 from lumen_anndata.flowdash.app import starter_dashboard
 from lumen_anndata.source import AnnDataSource
@@ -86,6 +87,23 @@ def test_manifold_map_passes_every_cell_until_a_selection(cells):
     assert node.selected() is cells
 
 
+def _counted(source):
+    return int(source.execute("SELECT COUNT(*) AS n FROM selected_cells")["n"].iloc[0])
+
+
+def test_manifold_map_selected_source_follows_the_selection(cells, dendritic):
+    import holoviews as hv
+
+    node = ManifoldMapNode(pipeline=cells)
+    assert _counted(node.selected_source()) == 700
+    view = node._object
+    node._select(view, hv.dim(str(view.current_kdims()[0])) > 0)
+    assert _counted(node.selected_source()) == len(node.selected().data) < 700
+    node._select(view, None)
+    assert _counted(node.selected_source()) == 700
+    assert _counted(ManifoldMapNode(pipeline=dendritic).selected_source()) == 240
+
+
 def test_manifold_map_reports_an_unknown_colour(cells):
     node = ManifoldMapNode(pipeline=cells, color_by="nope")
     assert node._error.startswith("No color by 'nope'")
@@ -124,6 +142,12 @@ def test_starter_dashboard_colours_by_annotations_and_hides_the_plumbing(source)
     dashboard = starter_dashboard(source)
     items = {item["instance_id"]: item for item in dashboard["items"]}
     assert items["cell_map"]["config"] == {"reduction": "X_umap", "color_by": "bulk_labels"}
+    # The counts follow what is selected on the map.
+    assert "FROM selected_cells" in items["cells_per_group"]["config"]["sql"]
+    assert {
+        "source": "cell_map", "source_port": "selected_source",
+        "target": "cells_per_group", "target_port": "source",
+    } in dashboard["edges"]
     shown = {t["instance_id"] for t in dashboard["tile_layout"] if t["visible"]}
     assert shown == {"cell_map", "cells_per_group_chart"}
 
@@ -171,3 +195,19 @@ def test_the_tools_check_what_they_are_given(ctx, monkeypatch):
     with pytest.raises(ModelRetry, match="700 cells"):
         add_clustermap(ctx, "cells", "heatmap")
     assert "heatmap" not in _components(ctx) and CLUSTERMAP_ID not in _components(ctx).values()
+
+
+async def test_a_sql_node_on_a_map_follows_its_selection(ctx):
+    import holoviews as hv
+
+    add_manifold_map(ctx, "cells", "cell_map")
+    sql = "SELECT bulk_labels, COUNT(*) AS cells FROM selected_cells GROUP BY 1"
+    assert "follows the selection" in await add_selection_sql(ctx, "cell_map", "per_label", sql)
+    ops = ctx.deps.ops
+    total = lambda: int(_graph.output(ops, "per_label", "data")["cells"].sum())  # noqa: E731
+    assert total() == 700
+    node = ops.editor._component_instances["cell_map"]
+    node._select(node._object, hv.dim(str(node._object.current_kdims()[0])) > 0)
+    assert total() == len(node.selected().data) < 700
+    with pytest.raises(ModelRetry, match="No manifold map 'cells'"):
+        await add_selection_sql(ctx, "cells", "nope", sql)
