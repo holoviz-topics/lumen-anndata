@@ -53,6 +53,12 @@ class AnnDataSource(DuckDBSource):
 
     filter_in_sql = param.Boolean(default=True, doc="Whether to apply filters in SQL or in-memory.")
 
+    sticky_selection = param.Boolean(default=True, doc="""
+        Whether a query of obs or var narrows every later query of the
+        source to the cells or genes it returned, as a chat conversation
+        narrows its data step by step. Turn it off where several views
+        share the source and must not narrow each other, as in FlowDash.""")
+
     operations = param.HookList(default=[], doc="""
         Operations to apply to the AnnData object
         ONLY when getting data with return_type='anndata'.""")
@@ -627,6 +633,8 @@ class AnnDataSource(DuckDBSource):
             return self._get_as_anndata(query, table)
 
         df_result = self._get_as_dataframe(table, query, sql_transforms)
+        if not self.sticky_selection:
+            return df_result
         if table == "obs" and "obs_id" in df_result.columns:
             self._obs_ids_selected = df_result["obs_id"].unique()
         elif table == "var" and "var_id" in df_result.columns:
