@@ -231,10 +231,11 @@ def anndata_toolset() -> FunctionToolset[FlowDashDeps]:
     )
 
 
-def create_agent(model: Any, **kwargs: Any):
-    """Lumen's FlowDash agent with the AnnData tools and instructions."""
-    from lumen.agent import create_agent as create_lumen_agent
+def create_agent(model: Any, *, base: Any = None, **kwargs: Any):
+    """Lumen's FlowDash agent, made by ``base`` (``lumen.agent.create_agent``), with the AnnData tools."""
+    if base is None:
+        from lumen.agent import create_agent as base
 
     instructions = INSTRUCTIONS + (f"\n{kwargs.pop('instructions')}" if kwargs.get("instructions") else "")
     toolsets = [anndata_toolset(), *kwargs.pop("toolsets", [])]
-    return create_lumen_agent(model, instructions=instructions, toolsets=toolsets, **kwargs)
+    return base(model, instructions=instructions, toolsets=toolsets, **kwargs)

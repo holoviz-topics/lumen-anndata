@@ -4,19 +4,17 @@ from __future__ import annotations
 import os
 
 from collections.abc import Sequence
+from functools import partial
+from unittest import mock
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
-from lumen.flowdash.app import LIBRARY, source_refs
 from lumen.flowdash.contracts import (
     SOURCE_ID, SQL_ID, TABLE_ID, VIEW_ID,
 )
-from lumen.flowdash.nodes import SOURCES_KEY
 from panel_flowdash import DashboardModel, DashboardStore, resolve_identity
-from panel_flowdash.agent.models import parse_models
-from panel_flowdash.app import FlowDashApp
 
 from ..source import AnnDataSource
 from .nodes import MANIFOLD_MAP_ID, SELECTION_TABLE
@@ -143,11 +141,21 @@ def starter_dashboard(source: AnnDataSource, ref: str = "data") -> dict[str, Any
     }
 
 
-def seed_starter(store: DashboardStore, source: AnnDataSource, owner: str) -> bool:
-    """Add the starter dashboard unless the store has it, which may have been edited since."""
-    if store.find_by_id_or_title(STARTER_ID) is not None:
-        return False
-    data = starter_dashboard(source)
+def seed_starter(store: DashboardStore, source: AnnDataSource, owner: str, ref: str = "data") -> bool:
+    """
+    Add the starter dashboard over ``source``, served as ``ref``. One the store
+    has is kept, since it may have been edited, unless its source node names a
+    ref the app no longer serves, which leaves it unable to show anything.
+    """
+    existing = store.find_by_id_or_title(STARTER_ID)
+    if existing is not None:
+        refs = [
+            (getattr(item, "config", None) or {}).get("ref")
+            for item in existing.items if getattr(item, "component_id", None) == SOURCE_ID
+        ]
+        if ref in refs:
+            return False
+    data = starter_dashboard(source, ref)
     store.save_dashboard(DashboardModel.from_dict({**data, "dashboard_id": STARTER_ID, "user_id": owner}))
     return True
 
@@ -162,15 +170,15 @@ def build_routes(
     **params: Any,
 ) -> dict[str, Any]:
     """
-    The routes of a FlowDash app over AnnData datasets, with Lumen's nodes,
-    lumen-anndata's nodes and, given ``agent_model``, Lumen's agent with the
-    AnnData tools.
+    The routes of Lumen's FlowDash app over AnnData datasets, with
+    lumen-anndata's nodes next to Lumen's and, given ``agent_model``, the
+    AnnData tools on Lumen's assistant.
 
     Parameters
     ----------
     data
         .h5ad paths, names of scanpy example datasets or AnnData objects.
-        Source nodes name them ``data``, ``data_2`` and so on.
+        Source nodes name them by the refs Lumen gives them.
     db_path
         The SQLite database dashboards are saved in; ``dashboards.db`` in
         the working directory by default.
@@ -179,33 +187,29 @@ def build_routes(
         person using the agent may pick from (``id`` or ``id=label``).
     seed
         Whether to add a starter dashboard over the first dataset.
+    **params
+        Further parameters of Lumen's ``build_routes``.
     """
-    sources = source_refs(anndata_sources(data))
-    models = parse_models(agent_model, source="agent_model")
-    agent: Any = False
-    if models:
-        from .agent import create_agent
+    import lumen.agent
 
-        default = models[0]["id"]
-        agent = create_agent(default, **({"defer_model_check": True} if len(models) > 1 else {}))
-        params.setdefault("agent_model", default)
-        params.setdefault("agent_models", models if len(models) > 1 else [])
-    store = DashboardStore(str(Path(db_path) if db_path else Path.cwd() / "dashboards.db"))
+    from lumen.flowdash import app as lumen_app
+
+    from .agent import create_agent
+
+    sources = anndata_sources(data)
     if seed and sources:
-        seed_starter(store, next(iter(sources.values())), resolve_identity().user)
-    editor_options = dict(params.pop("editor_options", {}))
-    editor_options["context"] = {**editor_options.get("context", {}), SOURCES_KEY: sources}
-    return FlowDashApp.build_routes(
-        project_dir=str(Path.cwd()),
-        registry={},
-        store=store,
-        component_libraries=[LIBRARY, COMPONENT_LIBRARY, *params.pop("component_libraries", [])],
-        editor_options=editor_options,
-        agent=agent,
-        agent_sensitive_components=[SOURCE_ID, *params.pop("agent_sensitive_components", [])],
-        title=title,
-        **params,
-    )
+        ref, first = next(iter(lumen_app.source_refs(sources).items()))
+        store = DashboardStore(str(Path(db_path) if db_path else Path.cwd() / "dashboards.db"))
+        seed_starter(store, first, resolve_identity().user, ref)
+    # Lumen builds the app, so it serves what lumen serve --flowdash does; only
+    # its assistant is made with the AnnData tools and instructions added.
+    lumen_agent = lumen.agent.create_agent
+    with mock.patch.object(lumen.agent, "create_agent", partial(create_agent, base=lumen_agent)):
+        return lumen_app.build_routes(
+            sources, db_path=db_path, agent_model=agent_model, title=title,
+            component_libraries=[COMPONENT_LIBRARY, *params.pop("component_libraries", [])],
+            **params,
+        )
 
 
 def serve(
